@@ -38,6 +38,7 @@ message ServerInfo{
 //confirmation message definition
 message Confirmation{
     bool status = 1;
+    bool isMaster = 2;
 }
 
 //id message definition

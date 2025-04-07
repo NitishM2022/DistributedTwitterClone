@@ -22,14 +22,20 @@
 #include <grpc++/grpc++.h>
 #include <glog/logging.h>
 #define log(severity, msg) \
-  LOG(severity) << msg;    \
-  google::FlushLogFiles(google::severity);
+    LOG(severity) << msg;  \
+    google::FlushLogFiles(google::severity);
 
 #include "coordinator.grpc.pb.h"
 #include "coordinator.pb.h"
 
-using google::protobuf::Timestamp;
+using csce438::Confirmation;
+using csce438::CoordService;
+using csce438::ID;
+using csce438::ServerInfo;
+using csce438::ServerList;
+using csce438::SynchService;
 using google::protobuf::Duration;
+using google::protobuf::Timestamp;
 using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
@@ -37,14 +43,9 @@ using grpc::ServerReader;
 using grpc::ServerReaderWriter;
 using grpc::ServerWriter;
 using grpc::Status;
-using csce438::CoordService;
-using csce438::ServerInfo;
-using csce438::Confirmation;
-using csce438::ID;
-using csce438::ServerList;
-using csce438::SynchService;
 
-struct zNode{
+struct zNode
+{
     int serverID;
     std::string hostname;
     std::string port;
@@ -52,106 +53,174 @@ struct zNode{
     std::time_t last_heartbeat;
     bool missed_heartbeat;
     bool isActive();
-
+    bool isMaster;
 };
 
-//potentially thread safe 
+// potentially thread safe
 std::mutex v_mutex;
-std::vector<zNode*> cluster1;
-std::vector<zNode*> cluster2;
-std::vector<zNode*> cluster3;
+std::vector<zNode *> cluster1;
+std::vector<zNode *> cluster2;
+std::vector<zNode *> cluster3;
 
 // creating a vector of vectors containing znodes
-std::vector<std::vector<zNode*>> clusters = {cluster1, cluster2, cluster3};
+std::vector<std::vector<zNode *>> clusters = {cluster1, cluster2, cluster3};
 
-
-//func declarations
-int findServer(std::vector<zNode*> v, int id); 
+// func declarations
+int findServer(std::vector<zNode *> v, int id, std::string type);
+int findMaster(std::vector<zNode *> v, std::string type);
 std::time_t getTimeNow();
 void checkHeartbeat();
 
-
-bool zNode::isActive(){
+bool zNode::isActive()
+{
     bool status = false;
-    if(!missed_heartbeat){
+    if (!missed_heartbeat)
+    {
         status = true;
-    }else if(difftime(getTimeNow(),last_heartbeat) < 10){
+    }
+    else if (difftime(getTimeNow(), last_heartbeat) < 10)
+    {
         status = true;
     }
     return status;
 }
 
+class CoordServiceImpl final : public CoordService::Service
+{
 
-class CoordServiceImpl final : public CoordService::Service {
-
-    Status Heartbeat(ServerContext* context, const ServerInfo* serverinfo, Confirmation* confirmation) override {
+    Status Heartbeat(ServerContext *context, const ServerInfo *serverinfo, Confirmation *confirmation) override
+    {
         int serverID = serverinfo->serverid();
         std::string hostname = serverinfo->hostname();
         std::string port = serverinfo->port();
         std::string type = serverinfo->type();
+        int clusterID = serverinfo->clusterid();
 
-        auto metadata = context->client_metadata();
-        auto clusterIDIter = metadata.find("clusterid");
-
-        v_mutex.lock();
-        if(clusterIDIter == metadata.end()){
-            bool found = false;
-            for (auto& c : clusters) {
-                for (auto& z : c) {
-                    if (z->serverID == serverID) {
-                        log(INFO, "Heartbeat received from server " + std::to_string(serverID));
-                        z->last_heartbeat = getTimeNow();
-                        z->missed_heartbeat = false;
-                        found = true;
-                        break;
-                    }
-                }
-                if (found) break;
+        if (type == "synchronizer")
+        {
+            v_mutex.lock();
+            int index = findServer(clusters[clusterID - 1], serverID, type);
+            if (index != -1)
+            {
+                log(INFO, "Heartbeat received from synchronizer " + std::to_string(serverID));
+                clusters[clusterID - 1][index]->last_heartbeat = getTimeNow();
+                clusters[clusterID - 1][index]->missed_heartbeat = false;
+                confirmation->set_ismaster(clusters[clusterID - 1][index]->isMaster);
             }
+            else
+            {
+                log(INFO, "Heartbeat received from new synchronizer " + std::to_string(serverID));
+                
+                // When a new synchronizer is added, check if there is already a master in the cluster
+                bool masterPresent = findMaster(clusters[clusterID - 1], type);
+                confirmation->set_ismaster(!masterPresent);
+                clusters[clusterID - 1].push_back(new zNode{serverID, hostname, port, type, getTimeNow(), false, !masterPresent});
+            }
+            v_mutex.unlock();
         }
-        else{
-            log(INFO, "Heartbeat received from server " + std::to_string(serverID));
-            int clusterID = std::stoi(std::string(clusterIDIter->second.data(), clusterIDIter->second.size()));
-            clusters[clusterID - 1].push_back(new zNode{serverID, hostname, port, type, getTimeNow(), false});
+        else if (type == "server")
+        {
+            auto metadata = context->client_metadata();
+            auto clusterIDIter = metadata.find("clusterid");
+
+            v_mutex.lock();
+            if (clusterIDIter == metadata.end()) // already registered
+            {
+                int index = findServer(clusters[clusterID - 1], serverID, type);
+                if (index != -1)
+                {
+                    log(INFO, "Heartbeat received from server " + std::to_string(serverID));
+                    clusters[clusterID - 1][index]->last_heartbeat = getTimeNow();
+                    clusters[clusterID - 1][index]->missed_heartbeat = false;
+                }
+                confirmation->set_ismaster(clusters[clusterID - 1][index]->isMaster);
+            }
+            else
+            {
+                log(INFO, "Heartbeat received from new server " + std::to_string(serverID));
+
+                // When a new server is added, check if there is already a master in the cluster
+                int clusterID = std::stoi(std::string(clusterIDIter->second.data(), clusterIDIter->second.size()));
+                bool masterPresent = findMaster(clusters[clusterID - 1], type);
+                confirmation->set_ismaster(!masterPresent);
+                clusters[clusterID - 1].push_back(new zNode{serverID, hostname, port, type, getTimeNow(), false, !masterPresent});
+            }
+            v_mutex.unlock();
         }
-        v_mutex.unlock();
 
         return Status::OK;
     }
 
-    //function returns the server information for requested client id
-    //this function assumes there are always 3 clusters and has math
-    //hardcoded to represent this.
-    Status GetServer(ServerContext* context, const ID* id, ServerInfo* serverinfo) override {
+    // function returns the server information for requested client id
+    // this function assumes there are always 3 clusters and has math
+    // hardcoded to represent this.
+    Status GetServer(ServerContext *context, const ID *id, ServerInfo *serverinfo) override
+    {
         int clientId = id->id();
         int clusterId = ((clientId - 1) % 3) + 1;
         int serverId = 0;
 
         v_mutex.lock();
 
-        log(INFO, "GetServer called for client " + std::to_string(clientId) + " for server in cluster " + std::to_string(clusterId));
-        zNode* server = clusters[clusterId - 1][serverId];
-        serverinfo->set_serverid(server->serverID);
-        serverinfo->set_hostname(server->hostname);
-        serverinfo->set_port(server->port);
-        serverinfo->set_type(server->type);
-        
+        if (clusterId >= 1 && clusterId <= clusters.size() && !clusters[clusterId - 1].empty()) {
+            for (const auto& server_node : clusters[clusterId - 1]) {
+                // Client only talks to master servers & master servers are always active
+                if (server_node->type == "server" && server_node->isMaster) {
+                    serverinfo->set_serverid(server_node->serverID);
+                    serverinfo->set_hostname(server_node->hostname);
+                    serverinfo->set_port(server_node->port);
+                    serverinfo->set_type(server_node->type);
+                    v_mutex.unlock();
+                    return Status::OK;
+                }
+            }
+            log(WARNING, "No active master server found in cluster " + std::to_string(clusterId) + " for client " + std::to_string(clientId));
+            v_mutex.unlock();
+            return Status::OK;
+        } 
+
+        log(ERROR, "Invalid cluster ID: " + std::to_string(clusterId) + " for client " + std::to_string(clientId));
+        v_mutex.unlock();
+        return Status::OK;
+    }
+
+    Status GetAllFollowerServers(ServerContext *context, const ID *id, ServerList *serverlist) override
+    {
+
+        v_mutex.lock();
+
+        log(INFO, "GetAllFollowerServers called by synchronizer");
+        for (auto &cluster : clusters)
+        {
+            for (auto &server : cluster)
+            {
+                if (server->type == "synchronizer" && server->isActive())
+                {
+                    serverlist->add_serverid(server->serverID);
+                    serverlist->add_hostname(server->hostname);
+                    serverlist->add_port(server->port);
+                    serverlist->add_type(server->type);
+                    serverlist->add_clusterid(server->clusterID);
+                    serverlist->add_ismaster(server->isMaster);
+                }
+            }
+        }
+
         v_mutex.unlock();
 
         return Status::OK;
     }
-
-
 };
 
-void RunServer(std::string port_no){
-    //start thread to check heartbeats
+void RunServer(std::string port_no)
+{
+    // start thread to check heartbeats
     std::thread hb(checkHeartbeat);
-    //localhost = 127.0.0.1
-    std::string server_address("127.0.0.1:"+port_no);
+    // localhost = 127.0.0.1
+    std::string server_address("127.0.0.1:" + port_no);
     CoordServiceImpl service;
-    //grpc::EnableDefaultHealthCheckService(true);
-    //grpc::reflection::InitProtoReflectionServerBuilderPlugin();
+    // grpc::EnableDefaultHealthCheckService(true);
+    // grpc::reflection::InitProtoReflectionServerBuilderPlugin();
     ServerBuilder builder;
     // Listen on the given address without any authentication mechanism.
     builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
@@ -167,42 +236,46 @@ void RunServer(std::string port_no){
     server->Wait();
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv)
+{
 
     std::string port = "3010";
     int opt = 0;
-    while ((opt = getopt(argc, argv, "p:")) != -1){
-        switch(opt) {
-            case 'p':
-                port = optarg;
-                break;
-            default:
-                std::cerr << "Invalid Command Line Argument\n";
+    while ((opt = getopt(argc, argv, "p:")) != -1)
+    {
+        switch (opt)
+        {
+        case 'p':
+            port = optarg;
+            break;
+        default:
+            std::cerr << "Invalid Command Line Argument\n";
         }
     }
     RunServer(port);
     return 0;
 }
 
-
-
-void checkHeartbeat(){
-    while(true){
-        //check servers for heartbeat > 10
-        //if true turn missed heartbeat = true
-        // Your code below
+void checkHeartbeat()
+{
+    while (true)
+    {
+        // check servers for heartbeat > 10
+        // if true turn missed heartbeat = true
+        //  Your code below
 
         v_mutex.lock();
 
         // iterating through the clusters vector of vectors of znodes
-        for (auto& c : clusters){
-            for(auto& s : c){
-                if(difftime(getTimeNow(),s->last_heartbeat)>10){
-                    std::cout << "missed heartbeat from server " << s->serverID << std::endl;
-                    if(!s->missed_heartbeat){
-                        s->missed_heartbeat = true;
-                        s->last_heartbeat = getTimeNow();
-                    }
+        for (auto &c : clusters)
+        {
+            for (auto &s : c)
+            {
+                if (difftime(getTimeNow(), s->last_heartbeat) > 10)
+                {
+                    log(WARNING, "Missed heartbeat from " + s->type + " " + std::to_string(s->serverID));
+                    s->missed_heartbeat = true;
+                    s->isMaster = false; // Demote if heartbeat is missed
                 }
             }
         }
@@ -213,8 +286,32 @@ void checkHeartbeat(){
     }
 }
 
-
-std::time_t getTimeNow(){
+std::time_t getTimeNow()
+{
     return std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 }
 
+int findServer(std::vector<zNode *> c, int id, std::string type)
+{
+    for (int i = 0; i < c.size(); i++)
+    {
+        zNode *z = c[i];
+        if (z->serverID == id && z->type == type)
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+bool findMaster(std::vector<zNode *> c, std::string type)
+{
+    for (auto &z : c)
+    {
+        if (z->type == type && z->isActive() && z->isMaster)
+        {
+            return true;
+        }
+    }
+    return false;
+}
