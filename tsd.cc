@@ -234,6 +234,7 @@ class SNSServiceImpl final : public SNSService::Service
   {
     Client *c = getClient(request->username());
     log(INFO, "Login request from " + request->username());
+    
     if (c != nullptr)
     {
       if (c->connected)
@@ -242,7 +243,9 @@ class SNSServiceImpl final : public SNSService::Service
       }
       else
       {
+        db_mutex.lock();
         c->connected = true;
+        db_mutex.unlock();
         reply->set_msg("login succeeded");
       }
     }
@@ -256,6 +259,7 @@ class SNSServiceImpl final : public SNSService::Service
       db_mutex.lock();
       client_db[new_client->username] = new_client;
       db_mutex.unlock();
+      log(INFO, "Client " + new_client->username + " added to client_db");
 
       reply->set_msg("login succeeded: new user created");
 
@@ -333,7 +337,9 @@ Client *getClient(const std::string &username)
   db_mutex.lock();
   auto it = client_db.find(username);
   if (it != client_db.end())
-    return it->second;
+      Client* client = it->second; 
+      db_mutex.unlock();
+      return client;
   db_mutex.unlock();
   log(ERROR, "Client not found: " + username);
 
@@ -500,38 +506,39 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
   std::thread db([&]()
                  {
     while (alive.load()) {
+      std::this_thread::sleep_for(std::chrono::seconds(5));
+      
       // add new clients to the client db
       std::string usersFile = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/all_users.txt";
       std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_all_users.txt";
-      sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
 
+      db_mutex.lock();
+      sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
       sem_wait(fileSem);
       std::ifstream userStream(usersFile);
+
       if (userStream.is_open()) {
         std::string user;
         while (userStream >> user) {
-          Client *c = getClient(user);
-
-          if (c == nullptr) {
+          if (client_db.find(user) == client_db.end()) {
             Client *new_client = new Client();
             new_client->username = user;
 
-            db_mutex.lock();
             client_db[new_client->username] = new_client;
-            db_mutex.unlock();
           }
         }
         userStream.close();
         sem_post(fileSem);
         sem_close(fileSem);
+        db_mutex.unlock();
         log(INFO, "Client db updated successfully.");
       } else {
         sem_post(fileSem);
         sem_close(fileSem);
+        db_mutex.unlock();
         log(ERROR, "Error opening user file: " + usersFile);
       }
       
-      std::this_thread::sleep_for(std::chrono::seconds(5));
     } });
 
   server->Wait();
