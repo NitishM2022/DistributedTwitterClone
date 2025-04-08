@@ -72,6 +72,7 @@ std::atomic<bool> alive = true;
 
 // func declarations
 int findServer(std::vector<zNode *> v, int id, std::string type);
+int findServerByAddr(std::vector<zNode *> v, std::string hostname, std::string port, std::string type);
 bool findMaster(std::vector<zNode *> v, std::string type);
 std::time_t getTimeNow();
 void checkHeartbeat();
@@ -133,7 +134,7 @@ class CoordServiceImpl final : public CoordService::Service
             auto clusterIDIter = metadata.find("clusterid");
 
             v_mutex.lock();
-            if (clusterIDIter != metadata.end() && findServer(clusters[clusterID - 1], serverID, type) == -1) // already registered
+            if (clusterIDIter != metadata.end() && findServerByAddr(clusters[clusterID - 1], hostname, port, type) == -1) // already registered
             {
                 log(INFO, "Heartbeat received from new server " + std::to_string(serverID));
                 // When a new server is added, check if there is already a master in the cluster
@@ -144,7 +145,7 @@ class CoordServiceImpl final : public CoordService::Service
             }
             else
             {
-                int index = findServer(clusters[clusterID - 1], serverID, type);
+                int index = findServerByAddr(clusters[clusterID - 1], hostname, port, type);
                 if (index != -1)
                 {
                     log(INFO, "Heartbeat received from server " + std::to_string(serverID));
@@ -321,6 +322,19 @@ int findServer(std::vector<zNode *> c, int id, std::string type)
     {
         zNode *z = c[i];
         if (z->serverID == id && z->type == type)
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int findServerByAddr(std::vector<zNode *> c, std::string hostname, std::string port, std::string type)
+{
+    for (int i = 0; i < c.size(); i++)
+    {
+        zNode *z = c[i];
+        if (z->hostname == hostname && z->port == port && z->type == type)
         {
             return i;
         }
