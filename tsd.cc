@@ -155,7 +155,8 @@ class SNSServiceImpl final : public SNSService::Service
     std::string u1 = request->username();
     std::string u2 = request->arguments(0);
 
-    db_mutex.lock();
+    log(INFO, "Follow request from " + u1 + " to " + u2);
+
     if (u1 == u2)
     {
       reply->set_msg("cannot follow yourself");
@@ -173,7 +174,6 @@ class SNSServiceImpl final : public SNSService::Service
     if (c2->client_followers.find(u1) != c2->client_followers.end())
     {
       reply->set_msg("already following");
-      db_mutex.unlock();
       return Status::OK;
     }
 
@@ -181,7 +181,8 @@ class SNSServiceImpl final : public SNSService::Service
     std::string file = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + c1->username + "_follow_list.txt";
     std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + c1->username + "_follow_list.txt";
     sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
-
+    
+    db_mutex.lock();
     sem_wait(fileSem);
     std::ofstream followingStream(file, std::ios::app | std::ios::out | std::ios::in);
     followingStream << c2->username << std::endl;
