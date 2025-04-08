@@ -321,8 +321,8 @@ class SNSServiceImpl final : public SNSService::Service
       for (auto &f : curr->client_following)
       {
         log(INFO, "Writing message to client " + u + "'s followers " + f + " following file");
-        std::string followingFile = "./cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + follower + "_following.txt";
-        std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + follower + "_following.txt";
+        std::string followingFile = "./cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + f + "_following.txt";
+        std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + f + "_following.txt";
         sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
         
         sem_wait(fileSem);
@@ -562,30 +562,30 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
 
       //follow list file
       for(const auto &client : client_db){
-        if(getClusterID(client->first) == clusterID){
-          std::string file = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + client->first + "_follow_list.txt";
-          std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + client->first + "_follow_list.txt";
+        if(getClusterID(client.first) == clusterID){
+          std::string file = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + client.first + "_follow_list.txt";
+          std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + client.first + "_follow_list.txt";
           fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
           sem_wait(fileSem);
           std::ifstream followingStream(file, std::ios::in);
           std::vector<std::string> addToFile;
           if (followingStream.is_open())
           {
-            log(INFO, "Follow List file opened successfully for + " + client->first);
+            log(INFO, "Follow List file opened successfully for + " + client.first);
             std::string following;
             std::unordered_set<std::string> follows;
             while (followingStream >> following)
             {
               follows.insert(following);
-              if(client->second->client_following.find(following) == client->second->client_following.end()){
-                client->second->client_following.insert(following);
+              if(client.second->client_following.find(following) == client.second->client_following.end()){
+                client.second->client_following.insert(following);
               }
             }
             followingStream.close();
 
             // write to the file
             std::ofstream followingStream(file, std::ios::app | std::ios::out | std::ios::in);
-            for(const auto &follow : client->second->client_following){
+            for(const auto &follow : client.second->client_following){
               if(follows.find(follow) == follows.end()){
                 followingStream << follow << std::endl;
               }
