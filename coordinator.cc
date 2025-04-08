@@ -129,16 +129,7 @@ class CoordServiceImpl final : public CoordService::Service
             auto clusterIDIter = metadata.find("clusterid");
 
             v_mutex.lock();
-            if (clusterIDIter != metadata.end()) // new server
-            {
-                log(INFO, "Heartbeat received from new server " + std::to_string(serverID));
-                // When a new server is added, check if there is already a master in the cluster
-                int clusterID = std::stoi(std::string(clusterIDIter->second.data(), clusterIDIter->second.size()));
-                bool masterPresent = findMaster(clusters[clusterID - 1], type);
-                confirmation->set_ismaster(!masterPresent);
-                clusters[clusterID - 1].push_back(new zNode{serverID, hostname, port, type, getTimeNow(), false, clusterID, !masterPresent});
-            }
-            else
+            if (clusterIDIter == metadata.end()) // already registered
             {
                 int index = findServer(clusters[clusterID - 1], serverID, type);
                 if (index != -1)
@@ -148,7 +139,15 @@ class CoordServiceImpl final : public CoordService::Service
                     clusters[clusterID - 1][index]->missed_heartbeat = false;
                     confirmation->set_ismaster(clusters[clusterID - 1][index]->isMaster);
                 }
-
+            }
+            else
+            {
+                log(INFO, "Heartbeat received from new server " + std::to_string(serverID));
+                // When a new server is added, check if there is already a master in the cluster
+                int clusterID = std::stoi(std::string(clusterIDIter->second.data(), clusterIDIter->second.size()));
+                bool masterPresent = findMaster(clusters[clusterID - 1], type);
+                confirmation->set_ismaster(!masterPresent);
+                clusters[clusterID - 1].push_back(new zNode{serverID, hostname, port, type, getTimeNow(), false, clusterID, !masterPresent});
             }
             v_mutex.unlock();
         }
