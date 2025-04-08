@@ -233,6 +233,7 @@ class SNSServiceImpl final : public SNSService::Service
   Status Login(ServerContext *context, const Request *request, Reply *reply) override
   {
     Client *c = getClient(request->username());
+    log(INFO, "Login request from " + request->username());
     if (c != nullptr)
     {
       if (c->connected)
