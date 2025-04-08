@@ -68,6 +68,8 @@ std::vector<zNode *> cluster3;
 // creating a vector of vectors containing znodes
 std::vector<std::vector<zNode *>> clusters = {cluster1, cluster2, cluster3};
 
+std::atomic<bool> alive = true;
+
 // func declarations
 int findServer(std::vector<zNode *> v, int id, std::string type);
 bool findMaster(std::vector<zNode *> v, std::string type);
@@ -239,6 +241,8 @@ void RunServer(std::string port_no)
     // Wait for the server to shutdown. Note that some other thread must be
     // responsible for shutting down the server for this call to ever return.
     server->Wait();
+
+    alive.store(false);
 }
 
 int main(int argc, char **argv)
@@ -263,7 +267,7 @@ int main(int argc, char **argv)
 
 void checkHeartbeat()
 {
-    while (true)
+    while (alive.load())
     {
         // check servers for heartbeat > 10
         // if true turn missed heartbeat = true

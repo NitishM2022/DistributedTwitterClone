@@ -533,8 +533,9 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
     } });
 
   server->Wait();
-
+  
   alive.store(false);
+  // Wait for threads to finish
   heartbeat.join();
   db.join();
 }
