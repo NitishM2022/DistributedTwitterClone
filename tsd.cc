@@ -135,7 +135,7 @@ class SNSServiceImpl final : public SNSService::Service
     log(INFO, "Added all users to list reply");
 
     Client *c = getClient(u);
-
+    
     // Add followers to the list reply
     log(INFO, "Attempting to add followers to list reply");
     if (c != nullptr)
@@ -143,8 +143,9 @@ class SNSServiceImpl final : public SNSService::Service
       db_mutex.lock();
       for (const auto &follower : c->client_followers)
       {
-        Client *f = getClient(follower);
-        if (f != nullptr)
+        // Cannot use getClient here, since it will lock the db_mutex again
+        Client *f = client_db.find(follower)->second;
+        if (f != client_db.end())
           list_reply->add_followers(f->username);
       }
       db_mutex.unlock();
