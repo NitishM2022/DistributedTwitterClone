@@ -38,6 +38,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <filesystem>
 #include <iomanip>
 #include <memory>
 #include <string>
@@ -102,7 +103,7 @@ struct Client
 
 int clusterID = 1;
 bool isMaster = false;
-std::string clusterSubdirectory;
+std::string clusterSubdirectory = "2"; // default to slave
 
 // map that stores the number of lines in each file
 std::mutex ffl_mutex;
@@ -440,6 +441,16 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
   std::unique_ptr<Server> server(builder.BuildAndStart());
   std::cout << "Server listening on " << server_address << std::endl;
   log(INFO, "Server listening on " + server_address);
+
+  // Make directory for cluster
+  std::string masterDir = "cluster_" + std::to_string(clusterID) + "/1";
+  std::string slaveDir = "cluster_" + std::to_string(clusterID) + "/2";
+  if (!std::filesystem::exists(masterDir)) {
+      std::filesystem::create_directories(masterDir); 
+  }
+  if (!std::filesystem::exists(slaveDir)) {
+      std::filesystem::create_directories(slaveDir); 
+  }
 
   std::thread heartbeat([=]()
                         {

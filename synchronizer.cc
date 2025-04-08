@@ -73,7 +73,7 @@ int clusterID = 1;
 bool isMaster = false;
 int total_number_of_registered_synchronizers = 6; // update this by asking coordinator
 std::string coordAddr;
-std::string clusterSubdirectory;
+std::string clusterSubdirectory = "2"; // default to slave
 std::vector<std::string> otherHosts;
 std::unordered_map<std::string, int> timelineLengths;
 
@@ -573,6 +573,16 @@ void run_synchronizer(std::string coordIP, std::string coordPort, std::string po
     msg.set_hostname("127.0.0.1");
     msg.set_port(port);
     msg.set_type("follower");
+
+    // Make directory for cluster
+    std::string masterDir = "cluster_" + std::to_string(clusterID) + "/1";
+    std::string slaveDir = "cluster_" + std::to_string(clusterID) + "/2";
+    if (!std::filesystem::exists(masterDir)) {
+        std::filesystem::create_directories(masterDir); 
+    }
+    if (!std::filesystem::exists(slaveDir)) {
+        std::filesystem::create_directories(slaveDir); 
+    }
 
     // TODO: begin synchronization process
     while (true)
