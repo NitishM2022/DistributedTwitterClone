@@ -116,7 +116,8 @@ std::unordered_map<std::string, Client *> client_db;
 std::atomic<bool> alive = true;
 
 Client *getClient(const std::string &);
-std::vector<Message> getLastNPosts(std::string, int = -1);
+int getClusterID(const std::string &);
+std::vector<Message> getLastNPosts(const std::string &, int = -1);
 void appendTo(const std::string &, const std::string &, const std::string &, const std::string &);
 
 class SNSServiceImpl final : public SNSService::Service
@@ -185,18 +186,7 @@ class SNSServiceImpl final : public SNSService::Service
     }
 
     db_mutex.lock();
-    std::string file = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + c1->username + "_follow_list.txt";
-    std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + c1->username + "_follow_list.txt";
-    sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
-
-    sem_wait(fileSem);
-    std::ofstream followingStream(file, std::ios::app | std::ios::out | std::ios::in);
-    followingStream << c2->username << std::endl;
     c1->client_following.insert(c2->username);
-
-    followingStream.close();
-    sem_post(fileSem);
-    sem_close(fileSem);
     c2->client_followers.insert(c1->username);
     // not going to edit the c2 followers file, since when the synchronizer comes into play, it will move the follow_list to followers
     db_mutex.unlock();
@@ -293,16 +283,6 @@ class SNSServiceImpl final : public SNSService::Service
       std::vector<Message> last_posts = getLastNPosts(u, 20);
       log(INFO, "Got last N posts for client " + u);
 
-      // Have to do this if no synchronizer is present
-      db_mutex.lock();
-      auto it = client_db.find(u);
-      if (it != client_db.end()){
-        curr = it->second;
-        curr->stream = stream;
-      }
-      db_mutex.unlock();
-
-
       for (const auto &post : last_posts)
       {
         stream->Write(post);
@@ -338,15 +318,17 @@ class SNSServiceImpl final : public SNSService::Service
       std::string time_str = ss.str();
 
       // have to do this withouth synchrnoizer
-      log(INFO, "Writing message to client " + u + "'s followers stream");
       for (auto &f : curr->client_following)
       {
-        client_db[f]->stream->Write(m);
-        ffl_mutex.lock();
-        if (followingFileLines.find(f) == followingFileLines.end())
-          followingFileLines[f] = 0;
-        followingFileLines[f]+=4;
-        ffl_mutex.unlock();
+        log(INFO, "Writing message to client " + u + "'s followers " + f + " following file");
+        std::string followingFile = "./cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + follower + "_following.txt";
+        std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + follower + "_following.txt";
+        sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
+        
+        sem_wait(fileSem);
+        appendTo(followingFile, time_str, u, m.msg());
+        sem_post(fileSem);
+        sem_close(fileSem);
       }
 
       log(INFO, "Writing received message from client " + u + " to timeline file");
@@ -374,7 +356,14 @@ Client *getClient(const std::string &username)
   return nullptr;
 }
 
-std::vector<Message> getLastNPosts(std::string u, int n)
+// from username
+int getClusterID(const std::string &username)
+{
+  int id = std::stoi(username);
+  return ((id - 1) % 3) + 1;
+}
+
+std::vector<Message> getLastNPosts(const std::string &u, int n)
 {
   std::vector<Message> posts;
   log(INFO, "Getting last N posts for user " + u);
@@ -571,8 +560,46 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
       sem_post(fileSem);
       sem_close(fileSem);
 
+      //follow list file
+      for(const auto &client : client_db){
+        if(getClusterID(client->first) == clusterID){
+          std::string file = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + client->first + "_follow_list.txt";
+          std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + client->first + "_follow_list.txt";
+          fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
+          sem_wait(fileSem);
+          std::ifstream followingStream(file, std::ios::in);
+          std::vector<std::string> addToFile;
+          if (followingStream.is_open())
+          {
+            log(INFO, "Follow List file opened successfully for + " + client->first);
+            std::string following;
+            std::unordered_set<std::string> follows;
+            while (followingStream >> following)
+            {
+              follows.insert(following);
+              if(client->second->client_following.find(following) == client->second->client_following.end()){
+                client->second->client_following.insert(following);
+              }
+            }
+            followingStream.close();
 
-      // following
+            // write to the file
+            std::ofstream followingStream(file, std::ios::app | std::ios::out | std::ios::in);
+            for(const auto &follow : client->second->client_following){
+              if(follows.find(follow) == follows.end()){
+                followingStream << follow << std::endl;
+              }
+            }
+            followingStream.close();
+          }else{
+            log(ERROR, "Error opening following file: " + file);
+          }
+          sem_post(fileSem);
+          sem_close(fileSem);
+        }
+      }
+
+      // follower file
       // update client db and write to the file
       for(const auto &client : client_db)
       {
