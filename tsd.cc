@@ -293,6 +293,16 @@ class SNSServiceImpl final : public SNSService::Service
       std::vector<Message> last_posts = getLastNPosts(u, 20);
       log(INFO, "Got last N posts for client " + u);
 
+      // Have to do this if no synchronizer is present
+      db_mutex.lock();
+      auto it = client_db.find(u);
+      if (it != client_db.end()){
+        curr = it->second;
+        curr->stream = stream;
+      }
+      db_mutex.unlock();
+
+
       for (const auto &post : last_posts)
       {
         stream->Write(post);
@@ -321,13 +331,25 @@ class SNSServiceImpl final : public SNSService::Service
     // update client timeline file
     while (stream->Read(&m))
     {
-      log(INFO, "Writing received message from client " + u + " to timeline file");
       std::time_t time = m.timestamp().seconds();
       std::tm *ltime = std::localtime(&time);
       std::stringstream ss;
       ss << std::put_time(ltime, "%Y-%m-%d %H:%M:%S");
       std::string time_str = ss.str();
 
+      // have to do this withouth synchrnoizer
+      log(INFO, "Writing message to client " + u + "'s followers stream");
+      for (auto &f : curr->client_following)
+      {
+        client_db[f]->stream->Write(m);
+        ffl_mutex.lock();
+        if (followingFileLines.find(f) == followingFileLines.end())
+          followingFileLines[f] = 0;
+        followingFileLines[f]+=4;
+        ffl_mutex.unlock();
+      }
+
+      log(INFO, "Writing received message from client " + u + " to timeline file");
       appendTo("./cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + u + "_timeline.txt", time_str, u, m.msg());
     }
 
