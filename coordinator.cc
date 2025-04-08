@@ -110,6 +110,7 @@ class CoordServiceImpl final : public CoordService::Service
                 log(INFO, "Heartbeat received from synchronizer " + std::to_string(serverID));
                 clusters[clusterID - 1][index]->last_heartbeat = getTimeNow();
                 clusters[clusterID - 1][index]->missed_heartbeat = false;
+                clusters[clusterID - 1][index]->isMaster = !findMaster(clusters[clusterID - 1], type);
                 confirmation->set_ismaster(clusters[clusterID - 1][index]->isMaster);
             }
             else
@@ -136,6 +137,7 @@ class CoordServiceImpl final : public CoordService::Service
                     log(INFO, "Heartbeat received from server " + std::to_string(serverID));
                     clusters[clusterID - 1][index]->last_heartbeat = getTimeNow();
                     clusters[clusterID - 1][index]->missed_heartbeat = false;
+                    clusters[clusterID - 1][index]->isMaster = !findMaster(clusters[clusterID - 1], type);
                     confirmation->set_ismaster(clusters[clusterID - 1][index]->isMaster);
                 }
             }
