@@ -176,7 +176,7 @@ public:
         csce438::ID id;
         id.set_id(synchID);
 
-        grpc::Status status = coordinator_stub_->GetAllFollowerServers(&context, *id, &followerServers);
+        grpc::Status status = coordinator_stub_->GetAllFollowerServers(&context, id, &followerServers);
 
         if (status.ok())
         {
@@ -245,7 +245,7 @@ public:
         id.set_id(synchID);
 
         // TODO: hardcoding 6 here, but you need to get list of all synchronizers from coordinator as before
-        grpc::Status status = coordinator_stub_->GetAllFollowerServers(&context, *id, &followerServers);
+        grpc::Status status = coordinator_stub_->GetAllFollowerServers(&context, id, &followerServers);
 
         if (!status.ok())
         {
@@ -345,7 +345,7 @@ public:
                 id.set_id(synchID);
 
                 // need to write to the follower's synchronizer queue
-                grpc::Status status = coordinator_stub_->GetAllFollowerServers(&context, *id, &followerServers);
+                grpc::Status status = coordinator_stub_->GetAllFollowerServers(&context, id, &followerServers);
 
                 if (!status.ok())
                 {
@@ -360,7 +360,7 @@ public:
                 for (int i = 0; i < followerServers.serverid_size(); ++i)
                 {
                     // Send to the follower's synchronizer, if it is not the current synchronizer
-                    if (followerServers.clusterid(i) == followerClusterID && followerServers.serverid(i) != synchID){
+                    if (std::stoi(followerServers.clusterid(i)) == followerClusterID && followerServers.serverid(i) != synchID){
                         std::string queueName = "synch" + std::to_string(followerServers.serverid(i)) + "_timeline_queue";
                         publishMessage(queueName, message);
                         log(INFO, "Published timeline update to " + queueName);
@@ -586,7 +586,7 @@ void run_synchronizer(std::string coordIP, std::string coordPort, std::string po
         id.set_id(synchID);
 
         // making a request to the coordinator to see count of follower synchronizers
-        coord_stub_->GetAllFollowerServers(&context, *id, &followerServers);
+        coord_stub_->GetAllFollowerServers(&context, id, &followerServers);
 
         std::vector<int> server_ids;
         std::vector<std::string> hosts, ports;

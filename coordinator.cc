@@ -205,7 +205,7 @@ class CoordServiceImpl final : public CoordService::Service
                     serverlist->add_hostname(server->hostname);
                     serverlist->add_port(server->port);
                     serverlist->add_type(server->type);
-                    serverlist->add_clusterid(server->clusterID);
+                    serverlist->add_clusterid(std::to_string(server->clusterId).c_str());
                     serverlist->add_ismaster(server->isMaster);
                 }
             }

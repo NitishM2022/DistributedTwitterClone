@@ -336,7 +336,7 @@ Client *getClient(const std::string &username)
   return nullptr;
 }
 
-std::vector<Message> getLastNPosts(std::string u, int n = -1)
+std::vector<Message> getLastNPosts(std::string u, int n)
 {
   std::vector<Message> posts;
 
@@ -429,7 +429,7 @@ void appendTo(const std::string &filename, const std::string &timestamp_str, con
   }
 }
 
-void RunServer(int clusterId, int serverId, std::string port_no, std::string coordinatorIP, std::string coordinatorPort)
+void RunServer(int clusterID, int serverId, std::string port_no, std::string coordinatorIP, std::string coordinatorPort)
 {
   std::string server_address = "0.0.0.0:" + port_no;
   SNSServiceImpl service;
@@ -441,7 +441,7 @@ void RunServer(int clusterId, int serverId, std::string port_no, std::string coo
   std::cout << "Server listening on " << server_address << std::endl;
   log(INFO, "Server listening on " + server_address);
 
-  std::thread heartbeat([]()
+  std::thread heartbeat([=]()
                         {
     bool registered = false;
     std::string coordinator_address = coordinatorIP + ":" + coordinatorPort;
@@ -453,25 +453,25 @@ void RunServer(int clusterId, int serverId, std::string port_no, std::string coo
     request.set_hostname("0.0.0.0");
     request.set_port(port_no);
     request.set_type("server");
-    request.set_clusterid(clusterId);
+    request.set_clusterid(clusterID);
     csce438::Confirmation reply;
 
     while (alive.load()) {
       if (!registered){
-        context.AddMetadata("clusterid", std::to_string(clusterId));
+        context.AddMetadata("clusterid", std::to_string(clusterID));
       }
 
       grpc::Status status = stub->Heartbeat(&context, request, &reply);
 
       if (status.ok()) {
-        log(INFO, "Server " + request.serverid() + " sent Heartbeat successfully.");
+        log(INFO, std::string("Server ") + request.serverid() + " sent Heartbeat successfully.");
         isMaster = reply.ismaster();
         if (isMaster){
-          log(INFO, "Server " + request.serverid() + " is a master.");
+          log(INFO, std::string("Server ") + request.serverid() + " is a master.");
           clusterSubdirectory= "1";
         }
         else{
-          log(INFO, "Server " + request.serverid() + " is a slave.");
+          log(INFO, std::string("Server ") + request.serverid() + " is a slave.");
           clusterSubdirectory= "2";
         }
         if (!registered)
@@ -488,7 +488,7 @@ void RunServer(int clusterId, int serverId, std::string port_no, std::string coo
                  {
     while (alive.load()) {
       // add new clients to the client db
-      std::string users = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/all_users.txt";
+      std::string usersFile = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/all_users.txt";
       std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_all_users.txt";
       sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
 
@@ -531,7 +531,7 @@ void RunServer(int clusterId, int serverId, std::string port_no, std::string coo
 int main(int argc, char **argv)
 {
 
-  clusterId = 1;
+  clusterID = 1;
   int serverId = 1;
   std::string coordinatorIP = "localhost";
   std::string coordinatorPort = "3010";
@@ -543,7 +543,7 @@ int main(int argc, char **argv)
     switch (opt)
     {
     case 'c':
-      clusterId = atoi(optarg);
+      clusterID = atoi(optarg);
       break;
     case 's':
       serverId = atoi(optarg);
@@ -567,7 +567,7 @@ int main(int argc, char **argv)
   std::string log_file_name = std::string("server-") + port;
   google::InitGoogleLogging(log_file_name.c_str());
   log(INFO, "Logging Initialized. Server starting...");
-  RunServer(clusterId, serverId, port, coordinatorIP, coordinatorPort);
+  RunServer(clusterID, serverId, port, coordinatorIP, coordinatorPort);
 
   return 0;
 }
