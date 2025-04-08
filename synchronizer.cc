@@ -312,6 +312,11 @@ public:
             }
 
             std::vector<std::string> timeline = get_tl_or_fl(synchID, clientId, true);
+            if (timeline.empty())
+            {
+                continue;
+            }
+
             std::vector<std::string> followers = getFollowersOfUser(clientId);
 
             for (const auto &follower : followers)
@@ -359,8 +364,10 @@ public:
                 total_number_of_registered_synchronizers = followerServers.serverid_size();
                 for (int i = 0; i < followerServers.serverid_size(); ++i)
                 {
-                    // Send to the follower's synchronizer, if it is not the current synchronizer
-                    if (std::stoi(followerServers.clusterid(i)) == followerClusterID && followerServers.serverid(i) != synchID){
+                    // Send to the follower's synchronizer, 
+                    // Ensure that you are not sending follower updates if they are in the same cluster
+                    // Ensure you are not sending to yourself
+                    if (std::stoi(followerServers.clusterid(i)) == followerClusterID &&  client_cluster != followerClusterID && followerServers.serverid(i) != synchID){
                         std::string queueName = "synch" + std::to_string(followerServers.serverid(i)) + "_timeline_queue";
                         publishMessage(queueName, message);
                         log(INFO, "Published timeline update to " + queueName);
