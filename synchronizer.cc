@@ -199,6 +199,8 @@ public:
                     }
                 }
             }
+
+
             updateAllUsersFile(allUsers);
         }
         else
@@ -448,6 +450,10 @@ private:
     {
         // had to sepaate this function as they use the same semaphore
         std::string usersFile = "./cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/all_users.txt";
+        std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_all_users.txt";
+        sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
+
+        sem_wait(fileSem);
         std::vector<std::string> newUsers;
         for (std::string user : users)
         {
@@ -457,10 +463,7 @@ private:
             }
         }
 
-        std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_all_users.txt";
-        sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
-
-        sem_wait(fileSem);
+        
         std::ofstream userStream(usersFile, std::ios::app | std::ios::out | std::ios::in);
         for(const auto &user : newUsers)
         {
@@ -570,7 +573,7 @@ int main(int argc, char **argv)
         log(ERROR, "Failed to create gRPC channel to coordinator: " + target_str);
     }
     RunServer(coordIP, coordPort, port, synchID);
-    
+
     return 0;
 }
 
@@ -656,45 +659,28 @@ void run_synchronizer(std::string coordIP, std::string coordPort, std::string po
     return;
 }
 
-std::vector<std::string> get_lines_from_file(std::string filename, std::string customClusterSubdirectory = "0")
+std::vector<std::string> get_lines_from_file(std::string filename)
 {
-    if (customClusterSubdirectory == "0")
-        customClusterSubdirectory = clusterSubdirectory;
-
     std::vector<std::string> users;
     std::string user;
     std::ifstream file;
-
-    std::string fileEnding = filename.substr(filename.find_last_of("/") + 1);
-    std::string semName = "/" + std::to_string(clusterID) + "_" + customClusterSubdirectory + "_" + fileEnding;
-    sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
-
-    sem_wait(fileSem);
     file.open(filename);
-    if (!file.is_open()) {
-        log(ERROR, "Error opening file: " + filename);
-        sem_post(fileSem);
-        sem_close(fileSem);
-        return users;
-    }
-
     if (file.peek() == std::ifstream::traits_type::eof())
     {
         // return empty vector if empty file
         // std::cout<<"returned empty vector bc empty file"<<std::endl;
         file.close();
-        sem_close(fileSem);
         return users;
     }
-    while (getline(file, user))
+    while (file)
     {
+        getline(file, user);
+
         if (!user.empty())
             users.push_back(user);
     }
 
     file.close();
-    sem_post(fileSem);
-    sem_close(fileSem);
 
     return users;
 }
@@ -741,6 +727,7 @@ bool file_contains_user(std::string filename, std::string user)
 {
     std::vector<std::string> users;
     // check username is valid
+
     users = get_lines_from_file(filename);
     for (int i = 0; i < users.size(); i++)
     {
@@ -755,6 +742,7 @@ bool file_contains_user(std::string filename, std::string user)
     return false;
 }
 
+
 std::vector<std::string> get_all_users_func(int synchID)
 {
     // read all_users file master and client for correct serverID
@@ -764,8 +752,21 @@ std::vector<std::string> get_all_users_func(int synchID)
     std::string master_users_file = "./cluster_" + clusterID + "/1/all_users.txt";
     std::string slave_users_file = "./cluster_" + clusterID + "/2/all_users.txt";
     // take longest list and package into AllUsers message
+
+
+    std::string semNameMaster = "/" + std::to_string(clusterID) + "_1_all_users.txt";
+    sem_t *fileSemMaster = sem_open(semNameMaster.c_str(), O_CREAT, 0666, 1);
+    sem_wait(fileSemMaster);
     std::vector<std::string> master_user_list = get_lines_from_file(master_users_file, "1");
+    sem_post(fileSemMaster);
+    sem_close(fileSemMaster);
+
+    std::string semNameSlave = "/" + std::to_string(clusterID) + "_2_all_users.txt";
+    sem_t *fileSemSlave = sem_open(semNameSlave.c_str(), O_CREAT, 0666, 1);
+    sem_wait(fileSemSlave);
     std::vector<std::string> slave_user_list = get_lines_from_file(slave_users_file, "2");
+    sem_post(fileSemSlave);
+    sem_close(fileSemSlave);
 
     if (master_user_list.size() >= slave_user_list.size())
         return master_user_list;
@@ -790,8 +791,19 @@ std::vector<std::string> get_tl_or_fl(int synchID, int clientID, bool tl)
         slave_fn.append("_followers.txt");
     }
 
-    std::vector<std::string> m = get_lines_from_file(master_fn, "1");
-    std::vector<std::string> s = get_lines_from_file(slave_fn, "2");
+    std::string semNameMaster = "/" + std::to_string(clusterID) + "_1_" + master_fn.substr(master_fn.find_last_of("/") + 1);
+    sem_t *fileSemMaster = sem_open(semNameMaster.c_str(), O_CREAT, 0666, 1);
+    sem_wait(fileSemMaster);
+    std::vector<std::string> m = get_lines_from_file(master_fn);
+    sem_post(fileSemMaster);
+    sem_close(fileSemMaster);
+
+    std::string semNameSlave = "/" + std::to_string(clusterID) + "_2_" + slave_fn.substr(slave_fn.find_last_of("/") + 1);
+    sem_t *fileSemSlave = sem_open(semNameSlave.c_str(), O_CREAT, 0666, 1);
+    sem_wait(fileSemSlave);
+    std::vector<std::string> s = get_lines_from_file(slave_fn);
+    sem_post(fileSemSlave);
+    sem_close(fileSemSlave);
 
     if (m.size() >= s.size())
     {
@@ -812,11 +824,17 @@ std::vector<std::string> getFollowersOfUser(int ID)
     for (auto userID : usersInCluster)
     { // Examine each user's following file
         std::string file = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + userID + "_follow_list.txt";
+        std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + userID + "_follow_list.txt";
+        sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
+
+        sem_wait(fileSem);
         // std::cout << "Reading file " << file << std::endl;
         if (file_contains_user(file, clientID))
         {
             followers.push_back(userID);
         }
+        sem_post(fileSem);
+        sem_close(fileSem);
     }
 
     return followers;
