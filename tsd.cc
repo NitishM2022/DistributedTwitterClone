@@ -469,6 +469,7 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
       grpc::ClientContext context;
       if (!registered){
         context.AddMetadata("clusterid", std::to_string(clusterID));
+        registered = true;
       }
       csce438::Confirmation reply;
       grpc::Status status = stub->Heartbeat(&context, request, &reply);
@@ -484,8 +485,6 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
           log(INFO, "Server " + std::to_string(request.serverid()) + " is a slave.");
           clusterSubdirectory= "2";
         }
-        if (!registered)
-          registered = true;
       } else {
         log(ERROR, "Heartbeat failed");
       }

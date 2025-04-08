@@ -128,6 +128,8 @@ class CoordServiceImpl final : public CoordService::Service
             auto metadata = context->client_metadata();
             auto clusterIDIter = metadata.find("clusterid");
 
+            cout << "Cluster ID: " << clusterID << " Cluster Size" << clusters[clusterID - 1].size() << endl;
+
             v_mutex.lock();
             if (clusterIDIter == metadata.end()) // already registered
             {
@@ -143,7 +145,6 @@ class CoordServiceImpl final : public CoordService::Service
             else
             {
                 log(INFO, "Heartbeat received from new server " + std::to_string(serverID));
-
                 // When a new server is added, check if there is already a master in the cluster
                 int clusterID = std::stoi(std::string(clusterIDIter->second.data(), clusterIDIter->second.size()));
                 bool masterPresent = findMaster(clusters[clusterID - 1], type);
