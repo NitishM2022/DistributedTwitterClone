@@ -288,7 +288,10 @@ class SNSServiceImpl final : public SNSService::Service
     if (stream->Read(&m))
     {
       u = m.username();
+      log(INFO, "Timeline request from client " + u);
+
       std::vector<Message> last_posts = getLastNPosts(u, 20);
+      log(INFO, "Got last 20 posts for client " + u);
 
       for (const auto &post : last_posts)
       {
@@ -321,6 +324,7 @@ class SNSServiceImpl final : public SNSService::Service
       ss << std::put_time(ltime, "%Y-%m-%d %H:%M:%S");
       std::string time_str = ss.str();
 
+      log(INFO, "Writing to timeline file for client " + u);
       appendTo(u + "_timeline.txt", time_str, u, m.msg());
     }
 
@@ -358,8 +362,12 @@ std::vector<Message> getLastNPosts(std::string u, int n)
   std::ifstream infile(followingFile);
 
   if (!infile.is_open())
+  {
+    log(INFO, "No posts found for user " + u);
+    sem_post(fileSem);
+    sem_close(fileSem);
     return posts;
-
+  }
   std::vector<std::string> lines;
   std::string line;
 
@@ -369,6 +377,7 @@ std::vector<Message> getLastNPosts(std::string u, int n)
   infile.close();
   sem_post(fileSem);
   sem_close(fileSem);
+  log(INFO, "Got client " + u + " following's posts");
 
   ffl_mutex.lock();
   if (followingFileLines.find(u) == followingFileLines.end())
