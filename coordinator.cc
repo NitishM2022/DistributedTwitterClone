@@ -164,6 +164,8 @@ class CoordServiceImpl final : public CoordService::Service
         int clusterID = ((clientID - 1) % 3) + 1;
         int serverId = 0;
 
+        log(INFO, "GetServer called by client " + std::to_string(clientID) + " for cluster " + std::to_string(clusterID));
+
         v_mutex.lock();
 
         if (clusterID >= 1 && clusterID <= clusters.size() && !clusters[clusterID - 1].empty()) {
