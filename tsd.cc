@@ -553,7 +553,7 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
           std::string follower;
           while (followerStream >> follower)
           {
-            if (c1->client_followers.find(follower) == client_followers.end())
+            if (c1->client_followers.find(follower) == c1->client_followers.end())
             {
               c1->client_followers.insert(follower);
             }
