@@ -573,6 +573,9 @@ void run_synchronizer(std::string coordIP, std::string coordPort, std::string po
     std::string target_str = coordIP + ":" + coordPort;
     std::unique_ptr<CoordService::Stub> coord_stub_;
     coord_stub_ = std::unique_ptr<CoordService::Stub>(CoordService::NewStub(grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials())));
+    if (!coord_stub_) {
+        log(ERROR, "Failed to create gRPC channel to coordinator: " + target_str);
+    }
 
     ServerInfo msg;
     Confirmation c;
@@ -712,7 +715,8 @@ void Heartbeat(std::string coordinatorIp, std::string coordinatorPort, ServerInf
     grpc::Status status = stub->Heartbeat(&context, serverInfo, &reply);
     if (status.ok())
     {
-        log(INFO, "Synchronizer " + std::to_string(serverInfo.serverid()) + " Heartbeat sent successfully");        if (reply.ismaster())
+        log(INFO, "Synchronizer " + std::to_string(serverInfo.serverid()) + " Heartbeat sent successfully");        
+        if (reply.ismaster())
         {
             log(INFO, "Synchronizer " + std::to_string(serverInfo.serverid()) + " is a master");
             isMaster = true;
