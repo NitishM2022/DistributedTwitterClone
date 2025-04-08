@@ -328,8 +328,7 @@ class SNSServiceImpl final : public SNSService::Service
       ss << std::put_time(ltime, "%Y-%m-%d %H:%M:%S");
       std::string time_str = ss.str();
 
-      log(INFO, "Writing to timeline file for client " + u);
-      appendTo(u + "_timeline.txt", time_str, u, m.msg());
+      appendTo("./cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + u + "_timeline.txt", time_str, u, m.msg());
     }
 
     following.join();
