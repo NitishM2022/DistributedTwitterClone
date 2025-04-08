@@ -110,7 +110,11 @@ class CoordServiceImpl final : public CoordService::Service
                 log(INFO, "Heartbeat received from synchronizer " + std::to_string(serverID));
                 clusters[clusterID - 1][index]->last_heartbeat = getTimeNow();
                 clusters[clusterID - 1][index]->missed_heartbeat = false;
-                clusters[clusterID - 1][index]->isMaster = !findMaster(clusters[clusterID - 1], type);
+                bool masterPresent = findMaster(clusters[clusterID - 1], type);
+                if (!masterPresent){
+                    clusters[clusterID - 1][index]->isMaster = true;
+                    log(INFO, "Synchronizer " + std::to_string(serverID) + " is now a master");
+                }
                 confirmation->set_ismaster(clusters[clusterID - 1][index]->isMaster);
             }
             else
@@ -137,7 +141,11 @@ class CoordServiceImpl final : public CoordService::Service
                     log(INFO, "Heartbeat received from server " + std::to_string(serverID));
                     clusters[clusterID - 1][index]->last_heartbeat = getTimeNow();
                     clusters[clusterID - 1][index]->missed_heartbeat = false;
-                    clusters[clusterID - 1][index]->isMaster = !findMaster(clusters[clusterID - 1], type);
+                    bool masterPresent = findMaster(clusters[clusterID - 1], type);
+                    if (!masterPresent){
+                        clusters[clusterID - 1][index]->isMaster = true;
+                        log(INFO, "Server " + std::to_string(serverID) + " is now a master");
+                    }
                     confirmation->set_ismaster(clusters[clusterID - 1][index]->isMaster);
                 }
             }
@@ -324,7 +332,7 @@ bool findMaster(std::vector<zNode *> c, std::string type)
 {
     for (auto &z : c)
     {
-        if (z->type == type && z->isActive() && z->isMaster)
+        if (z->type == type && z->isMaster)
         {
             return true;
         }
