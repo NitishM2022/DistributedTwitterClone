@@ -467,10 +467,14 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
 
     while (alive.load()) {
       grpc::ClientContext context;
+      context.ClearMetadata();
       if (!registered){
         context.AddMetadata("clusterid", std::to_string(clusterID));
         registered = true;
+      }else{
+        context = grpc::ClientContext();
       }
+      
       csce438::Confirmation reply;
       grpc::Status status = stub->Heartbeat(&context, request, &reply);
 

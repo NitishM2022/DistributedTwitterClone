@@ -128,20 +128,17 @@ class CoordServiceImpl final : public CoordService::Service
             auto metadata = context->client_metadata();
             auto clusterIDIter = metadata.find("clusterid");
 
-            log(INFO, "Cluster ID: " + std::to_string(clusterID) + " Cluster Size: " + std::to_string(clusters[clusterID - 1].size()));
-
             v_mutex.lock();
             if (clusterIDIter == metadata.end()) // already registered
             {
                 int index = findServer(clusters[clusterID - 1], serverID, type);
-                log(INFO, "Index: " + std::to_string(index));
                 if (index != -1)
                 {
                     log(INFO, "Heartbeat received from server " + std::to_string(serverID));
                     clusters[clusterID - 1][index]->last_heartbeat = getTimeNow();
                     clusters[clusterID - 1][index]->missed_heartbeat = false;
+                    confirmation->set_ismaster(clusters[clusterID - 1][index]->isMaster);
                 }
-                confirmation->set_ismaster(true);
             }
             else
             {
