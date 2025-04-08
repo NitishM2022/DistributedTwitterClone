@@ -135,7 +135,7 @@ class SNSServiceImpl final : public SNSService::Service
     log(INFO, "Added all users to list reply");
 
     Client *c = getClient(u);
-    
+
     // Add followers to the list reply
     log(INFO, "Attempting to add followers to list reply");
     if (c != nullptr)
@@ -144,9 +144,11 @@ class SNSServiceImpl final : public SNSService::Service
       for (const auto &follower : c->client_followers)
       {
         // Cannot use getClient here, since it will lock the db_mutex again
-        std::string f = client_db.find(follower);
-        if (f != client_db.end())
-          list_reply->add_followers(client_db[f]->username);
+        auto it = client_db.find(follower); // Get the iterator
+        if (it != client_db.end())
+        {                                                  // Check if the follower exists in the map
+          list_reply->add_followers(it->second->username); // Access the Client* and add the username
+        }
       }
       db_mutex.unlock();
       log(INFO, "Added followers to list reply");
@@ -182,7 +184,6 @@ class SNSServiceImpl final : public SNSService::Service
       return Status::OK;
     }
 
-    
     db_mutex.lock();
     std::string file = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + c1->username + "_follow_list.txt";
     std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + c1->username + "_follow_list.txt";
@@ -256,7 +257,7 @@ class SNSServiceImpl final : public SNSService::Service
       // must add the new user to the all_users.txt file
       std::string usersFile = "./cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/all_users.txt";
       std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_all_users.txt";
-      
+
       sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
 
       // Actual data modification
