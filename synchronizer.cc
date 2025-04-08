@@ -609,7 +609,7 @@ void run_synchronizer(std::string coordIP, std::string coordPort, std::string po
         id.set_id(synchID);
 
         // making a request to the coordinator to see count of follower synchronizers
-        coord_stub_->GetAllFollowerServers(&context, id, &followerServers);
+        coordinator_stub_->GetAllFollowerServers(&context, id, &followerServers);
 
         std::vector<int> server_ids;
         std::vector<std::string> hosts, ports;
