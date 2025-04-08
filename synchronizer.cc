@@ -573,6 +573,7 @@ void run_synchronizer(std::string coordIP, std::string coordPort, std::string po
     std::string target_str = coordIP + ":" + coordPort;
     log(INFO, "Connecting to coordinator at: " + target_str);
     std::unique_ptr<CoordService::Stub> coord_stub_;
+    log(INFO, "Creating gRPC channel to coordinator");
     coord_stub_ = std::unique_ptr<CoordService::Stub>(CoordService::NewStub(grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials())));
     if (!coord_stub_) {
         log(ERROR, "Failed to create gRPC channel to coordinator: " + target_str);
