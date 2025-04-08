@@ -128,7 +128,7 @@ class CoordServiceImpl final : public CoordService::Service
             auto metadata = context->client_metadata();
             auto clusterIDIter = metadata.find("clusterid");
 
-            cout << "Cluster ID: " << clusterID << " Cluster Size" << clusters[clusterID - 1].size() << endl;
+            std::cout << "Cluster ID: " << clusterID << " Cluster Size" << clusters[clusterID - 1].size() << std::endl;
 
             v_mutex.lock();
             if (clusterIDIter == metadata.end()) // already registered
