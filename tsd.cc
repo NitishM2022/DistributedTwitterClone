@@ -234,7 +234,7 @@ class SNSServiceImpl final : public SNSService::Service
   {
     Client *c = getClient(request->username());
     log(INFO, "Login request from " + request->username());
-    
+
     if (c != nullptr)
     {
       if (c->connected)
@@ -337,9 +337,11 @@ Client *getClient(const std::string &username)
   db_mutex.lock();
   auto it = client_db.find(username);
   if (it != client_db.end())
-      Client* client = it->second; 
-      db_mutex.unlock();
-      return client;
+  {
+    Client *client = it->second;
+    db_mutex.unlock();
+    return client;
+  }
   db_mutex.unlock();
   log(ERROR, "Client not found: " + username);
 
@@ -454,11 +456,13 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
   // Make directory for cluster
   std::string masterDir = "cluster_" + std::to_string(clusterID) + "/1";
   std::string slaveDir = "cluster_" + std::to_string(clusterID) + "/2";
-  if (!std::filesystem::exists(masterDir)) {
-      std::filesystem::create_directories(masterDir); 
+  if (!std::filesystem::exists(masterDir))
+  {
+    std::filesystem::create_directories(masterDir);
   }
-  if (!std::filesystem::exists(slaveDir)) {
-      std::filesystem::create_directories(slaveDir); 
+  if (!std::filesystem::exists(slaveDir))
+  {
+    std::filesystem::create_directories(slaveDir);
   }
 
   std::thread heartbeat([=]()
@@ -542,7 +546,7 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
     } });
 
   server->Wait();
-  
+
   alive.store(false);
   // Wait for threads to finish
   heartbeat.join();
