@@ -144,9 +144,9 @@ class SNSServiceImpl final : public SNSService::Service
       for (const auto &follower : c->client_followers)
       {
         // Cannot use getClient here, since it will lock the db_mutex again
-        Client *f = client_db.find(follower)->second;
+        std::string f = client_db.find(follower);
         if (f != client_db.end())
-          list_reply->add_followers(f->username);
+          list_reply->add_followers(client_db[f]->username);
       }
       db_mutex.unlock();
       log(INFO, "Added followers to list reply");
