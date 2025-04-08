@@ -125,12 +125,14 @@ class SNSServiceImpl final : public SNSService::Service
   Status List(ServerContext *context, const Request *request, ListReply *list_reply) override
   {
     std::string u = request->username();
+    log(INFO, "List request from " + u);
 
     db_mutex.lock();
     // Add all users to the list reply
     for (const auto &client : client_db)
       list_reply->add_all_users(client.second->username);
     db_mutex.unlock();
+    log(INFO, "Added all users to list reply");
 
     Client *c = getClient(u);
 
@@ -145,6 +147,7 @@ class SNSServiceImpl final : public SNSService::Service
           list_reply->add_followers(f->username);
       }
       db_mutex.unlock();
+      log(INFO, "Added followers to list reply");
     }
 
     return Status::OK;
@@ -186,11 +189,12 @@ class SNSServiceImpl final : public SNSService::Service
     sem_wait(fileSem);
     std::ofstream followingStream(file, std::ios::app | std::ios::out | std::ios::in);
     followingStream << c2->username << std::endl;
+    c1->client_following.insert(c2->username);
+
     followingStream.close();
     sem_post(fileSem);
     sem_close(fileSem);
 
-    c1->client_following.insert(c2->username);
 
     file = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + c2->username + "_followers.txt";
     semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + c2->username + "_followers.txt";
@@ -200,10 +204,11 @@ class SNSServiceImpl final : public SNSService::Service
     std::ofstream followerStream(file, std::ios::app | std::ios::out | std::ios::in);
     followerStream << c1->username << std::endl;
     followerStream.close();
+    c2->client_followers.insert(c1->username);
+
     sem_post(fileSem);
     sem_close(fileSem);
 
-    c2->client_followers.insert(c1->username);
     reply->set_msg("follow successful");
     db_mutex.unlock();
 
