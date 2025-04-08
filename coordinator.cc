@@ -136,7 +136,7 @@ class CoordServiceImpl final : public CoordService::Service
             v_mutex.lock();
             if (clusterIDIter != metadata.end() && findServerByAddr(clusters[clusterID - 1], hostname, port, type) == -1) // already registered
             {
-                log(INFO, "Heartbeat received from new server " + std::to_string(serverID));
+                log(INFO, "Heartbeat received from new server " + std::to_string(serverID) + " in cluster " + std::to_string(clusterID));
                 // When a new server is added, check if there is already a master in the cluster
                 int clusterID = std::stoi(std::string(clusterIDIter->second.data(), clusterIDIter->second.size()));
                 bool masterPresent = findMaster(clusters[clusterID - 1], type);
@@ -148,7 +148,7 @@ class CoordServiceImpl final : public CoordService::Service
                 int index = findServerByAddr(clusters[clusterID - 1], hostname, port, type);
                 if (index != -1)
                 {
-                    log(INFO, "Heartbeat received from server " + std::to_string(serverID));
+                    log(INFO, "Heartbeat received from server " + std::to_string(serverID) + " in cluster " + std::to_string(clusterID));
                     clusters[clusterID - 1][index]->last_heartbeat = getTimeNow();
                     clusters[clusterID - 1][index]->missed_heartbeat = false;
                     bool masterPresent = findMaster(clusters[clusterID - 1], type);
