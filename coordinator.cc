@@ -52,8 +52,11 @@ struct zNode
     std::string type;
     std::time_t last_heartbeat;
     bool missed_heartbeat;
-    bool isActive();
+    int clusterID;
     bool isMaster;
+
+    // function to check if the node is active
+    bool isActive();
 };
 
 // potentially thread safe
@@ -67,7 +70,7 @@ std::vector<std::vector<zNode *>> clusters = {cluster1, cluster2, cluster3};
 
 // func declarations
 int findServer(std::vector<zNode *> v, int id, std::string type);
-int findMaster(std::vector<zNode *> v, std::string type);
+bool findMaster(std::vector<zNode *> v, std::string type);
 std::time_t getTimeNow();
 void checkHeartbeat();
 
@@ -114,7 +117,7 @@ class CoordServiceImpl final : public CoordService::Service
                 // When a new synchronizer is added, check if there is already a master in the cluster
                 bool masterPresent = findMaster(clusters[clusterID - 1], type);
                 confirmation->set_ismaster(!masterPresent);
-                clusters[clusterID - 1].push_back(new zNode{serverID, hostname, port, type, getTimeNow(), false, !masterPresent});
+                clusters[clusterID - 1].push_back(new zNode{serverID, hostname, port, type, getTimeNow(), false, clusterID, !masterPresent});
             }
             v_mutex.unlock();
         }
@@ -143,7 +146,7 @@ class CoordServiceImpl final : public CoordService::Service
                 int clusterID = std::stoi(std::string(clusterIDIter->second.data(), clusterIDIter->second.size()));
                 bool masterPresent = findMaster(clusters[clusterID - 1], type);
                 confirmation->set_ismaster(!masterPresent);
-                clusters[clusterID - 1].push_back(new zNode{serverID, hostname, port, type, getTimeNow(), false, !masterPresent});
+                clusters[clusterID - 1].push_back(new zNode{serverID, hostname, port, type, getTimeNow(), false, clusterID, !masterPresent});
             }
             v_mutex.unlock();
         }
@@ -156,30 +159,32 @@ class CoordServiceImpl final : public CoordService::Service
     // hardcoded to represent this.
     Status GetServer(ServerContext *context, const ID *id, ServerInfo *serverinfo) override
     {
-        int clientId = id->id();
-        int clusterId = ((clientId - 1) % 3) + 1;
+        int clientID = id->id();
+        int clusterID = ((clientID - 1) % 3) + 1;
         int serverId = 0;
 
         v_mutex.lock();
 
-        if (clusterId >= 1 && clusterId <= clusters.size() && !clusters[clusterId - 1].empty()) {
-            for (const auto& server_node : clusters[clusterId - 1]) {
+        if (clusterID >= 1 && clusterID <= clusters.size() && !clusters[clusterID - 1].empty()) {
+            for (const auto& server_node : clusters[clusterID - 1]) {
                 // Client only talks to master servers & master servers are always active
                 if (server_node->type == "server" && server_node->isMaster) {
                     serverinfo->set_serverid(server_node->serverID);
                     serverinfo->set_hostname(server_node->hostname);
                     serverinfo->set_port(server_node->port);
                     serverinfo->set_type(server_node->type);
+                    serverinfo->set_clusterid(server_node->clusterID);
+                    serverinfo->set_ismaster(server_node->isMaster);
                     v_mutex.unlock();
                     return Status::OK;
                 }
             }
-            log(WARNING, "No active master server found in cluster " + std::to_string(clusterId) + " for client " + std::to_string(clientId));
+            log(WARNING, "No active master server found in cluster " + std::to_string(clusterID) + " for client " + std::to_string(clientID));
             v_mutex.unlock();
             return Status::OK;
         } 
 
-        log(ERROR, "Invalid cluster ID: " + std::to_string(clusterId) + " for client " + std::to_string(clientId));
+        log(ERROR, "Invalid cluster ID: " + std::to_string(clusterID) + " for client " + std::to_string(clientID));
         v_mutex.unlock();
         return Status::OK;
     }

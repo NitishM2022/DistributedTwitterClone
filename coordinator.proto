@@ -75,6 +75,8 @@ message ServerList{
     repeated string hostname = 2;
     repeated string port = 3;
     repeated string type = 4;
+    repeated string clusterID = 5;
+    repeated bool isMaster = 6;
 }
 
 

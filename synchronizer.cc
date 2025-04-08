@@ -176,7 +176,7 @@ public:
         csce438::ID id;
         id.set_id(synchID);
 
-        grpc::Status status = coordinator_stub_->GetAllFollowerServers(&context, &id, &followerServers);
+        grpc::Status status = coordinator_stub_->GetAllFollowerServers(&context, *id, &followerServers);
 
         if (status.ok())
         {
@@ -245,7 +245,7 @@ public:
         id.set_id(synchID);
 
         // TODO: hardcoding 6 here, but you need to get list of all synchronizers from coordinator as before
-        grpc::Status status = coordinator_stub_->GetAllFollowerServers(&context, &id, &followerServers);
+        grpc::Status status = coordinator_stub_->GetAllFollowerServers(&context, *id, &followerServers);
 
         if (!status.ok())
         {
@@ -345,7 +345,7 @@ public:
                 id.set_id(synchID);
 
                 // need to write to the follower's synchronizer queue
-                grpc::Status status = coordinator_stub_->GetAllFollowerServers(&context, &id, &followerServers);
+                grpc::Status status = coordinator_stub_->GetAllFollowerServers(&context, *id, &followerServers);
 
                 if (!status.ok())
                 {
@@ -359,13 +359,12 @@ public:
                 total_number_of_registered_synchronizers = followerServers.serverid_size();
                 for (int i = 0; i < followerServers.serverid_size(); ++i)
                 {
-                    if (followerServers.serverid(i) == synchID)
-                        continue; // don't send to yourself
-                    if (followerServers.clusterid(i) != followerClusterID)
-                        continue; // only send to cluster of the follower
-
-                    std::string queueName = "synch" + std::to_string(followerServers.serverid(i)) + "_timeline_queue";
-                    publishMessage(queueName, message);
+                    // Send to the follower's synchronizer, if it is not the current synchronizer
+                    if (followerServers.clusterid(i) == followerClusterID && followerServers.serverid(i) != synchID){
+                        std::string queueName = "synch" + std::to_string(followerServers.serverid(i)) + "_timeline_queue";
+                        publishMessage(queueName, message);
+                        log(INFO, "Published timeline update to " + queueName);
+                    }
                 }
             }
         }
@@ -400,7 +399,7 @@ public:
                     std::vector<std::string> followers = getFollowersOfUser(std::stoi(clientId));
                     int followingLength = timelineLengths[clientId];
 
-                    for (int i = timelineLengths[clientId]; i < root[client].size(); i++)
+                    for (int i = timelineLengths[clientId]; i < root[clientId].size(); i++)
                     {
                         const auto &post = root[client][i];
                         timelineStream << "T " << post["timestamp"].asString() << "\n";
@@ -587,7 +586,7 @@ void run_synchronizer(std::string coordIP, std::string coordPort, std::string po
         id.set_id(synchID);
 
         // making a request to the coordinator to see count of follower synchronizers
-        coord_stub_->GetAllFollowerServers(&context, id, &followerServers);
+        coord_stub_->GetAllFollowerServers(&context, *id, &followerServers);
 
         std::vector<int> server_ids;
         std::vector<std::string> hosts, ports;
@@ -682,22 +681,21 @@ void Heartbeat(std::string coordinatorIp, std::string coordinatorPort, ServerInf
 
     // YOUR CODE HERE
     grpc::ClientContext context;
-    csce438::ServerInfo serverInfo = serverInfo;
     csce438::Confirmation reply;
 
     grpc::Status status = stub->Heartbeat(&context, serverInfo, &reply);
     if (status.ok())
     {
-        log(INFO, "Synchronizer " + serverinfo.serverid() + " Heartbeat sent successfully");
+        log(INFO, "Synchronizer " + serverInfo.serverid() + " Heartbeat sent successfully");
         if (reply.ismaster())
         {
-            log(INFO, "Synchronizer " + serverinfo.serverid() + " is a master");
+            log(INFO, "Synchronizer " + serverInfo.serverid() + " is a master");
             isMaster = true;
             clusterSubdirectory = "1";
         }
         else
         {
-            log(INFO, "Synchronizer " + serverinfo.serverid() + " is a slave");
+            log(INFO, "Synchronizer " + serverInfo.serverid() + " is a slave");
             isMaster = false;
             clusterSubdirectory = "2";
         }

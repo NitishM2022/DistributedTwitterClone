@@ -44,6 +44,8 @@
 #include <sstream>
 #include <stdlib.h>
 #include <unistd.h>
+
+#include <fcntl.h>
 #include <semaphore.h>
 #include <thread>
 #include <atomic>
@@ -110,6 +112,12 @@ std::unordered_map<std::string, int> followingFileLines;
 std::mutex db_mutex;
 std::unordered_map<std::string, Client *> client_db;
 
+std::atomic<bool> alive = true;
+
+Client *getClient(const std::string &);
+std::vector<Message> getLastNPosts(std::string, int = -1);
+void appendTo(const std::string &, const std::string &, const std::string &, const std::string &);
+
 class SNSServiceImpl final : public SNSService::Service
 {
 
@@ -171,7 +179,7 @@ class SNSServiceImpl final : public SNSService::Service
     // update client db and write to the file
     std::string file = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + c1->username + "_follow_list.txt";
     std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + c1->username + "_follow_list.txt";
-    sem_t *fileSem = sem_open(semName.c_str(), O_CREAT);
+    sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
 
     sem_wait(fileSem);
     std::ofstream followingStream(file, std::ios::app | std::ios::out | std::ios::in);
@@ -184,7 +192,7 @@ class SNSServiceImpl final : public SNSService::Service
 
     file = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + c2->username + "_followers.txt";
     semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + c2->username + "_followers.txt";
-    fileSem = sem_open(semName.c_str(), O_CREAT);
+    fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
 
     sem_wait(fileSem);
     std::ofstream followerStream(file, std::ios::app | std::ios::out | std::ios::in);
@@ -251,7 +259,7 @@ class SNSServiceImpl final : public SNSService::Service
       // must add the new user to the all_users.txt file
       std::string usersFile = "./cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/all_users.txt";
       std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_all_users.txt";
-      sem_t *fileSem = sem_open(semName.c_str(), O_CREAT);
+      sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
 
       sem_wait(fileSem);
 
@@ -275,12 +283,6 @@ class SNSServiceImpl final : public SNSService::Service
     if (stream->Read(&m))
     {
       u = m.username();
-      curr = getClient(u);
-      if (curr == nullptr)
-        continue;
-
-      curr->stream = stream;
-
       std::vector<Message> last_posts = getLastNPosts(u, 20);
 
       for (const auto &post : last_posts)
@@ -317,116 +319,115 @@ class SNSServiceImpl final : public SNSService::Service
       appendTo(u + "_timeline.txt", time_str, u, m.msg());
     }
 
-    following->join();
+    following.join();
     return Status::OK;
   }
+};
 
-  Client *getClient(const std::string &username)
+Client *getClient(const std::string &username)
+{
+  db_mutex.lock();
+  auto it = client_db.find(username);
+  if (it != client_db.end())
+    return it->second;
+  db_mutex.unlock();
+  log(ERROR, "Client not found: " + username);
+
+  return nullptr;
+}
+
+std::vector<Message> getLastNPosts(std::string u, int n = -1)
+{
+  std::vector<Message> posts;
+
+  // Get last n posts from the user's following file
+  std::string followingFile = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + u + "_following.txt";
+  std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + u + "_following.txt";
+  sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
+
+  sem_wait(fileSem);
+  std::ifstream infile(followingFile);
+
+  if (!infile.is_open())
+    return posts;
+
+  std::vector<std::string> lines;
+  std::string line;
+
+  while (std::getline(infile, line))
+    lines.push_back(line);
+
+  infile.close();
+  sem_post(fileSem);
+  sem_close(fileSem);
+
+  ffl_mutex.lock();
+  if (followingFileLines.find(u) == followingFileLines.end())
+    followingFileLines[u] = 0;
+  int start = followingFileLines[u];
+  ffl_mutex.unlock();
+
+  if (n != -1)
+    start = std::max(start, static_cast<int>(lines.size()) - (n * 4));
+
+  for (int i = start; i <= lines.size() - 4; i += 4)
   {
-    db_mutex.lock();
-    auto it = client_db.find(username);
-    if (it != client_db.end())
-      return it->second;
-    db_mutex.unlock();
-    log(ERROR, "Client not found: " + username);
-
-    return nullptr;
-  }
-
-  std::vector<Message> getLastNPosts(std::string u, int n = -1)
-  {
-    std::vector<Message> posts;
-
-    // Get last n posts from the user's following file
-    std::string followingFile = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + u + "_following.txt";
-    std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + u + "_following.txt";
-    sem_t *fileSem = sem_open(semName.c_str(), O_CREAT);
-
-    sem_wait(fileSem);
-    std::ifstream infile(file);
-
-    if (!infile.is_open())
-      return posts;
-
-    std::vector<std::string> lines;
-    std::string line;
-
-    while (std::getline(infile, line))
-      lines.push_back(line);
-
-    infile.close();
-    sem_post(fileSem);
-    sem_close(fileSem);
-
-    ffl_mutex.lock();
-    if (followingFileLines.find(u) == followingFileLines.end())
-      followingFileLines[u] = 0;
-    int start = followingFileLines[u];
-    ffl_mutex.unlock();
-    
-    
-    if (n != -1)
-      start = std::max(start, static_cast<int>(lines.size()) - (n * 4));
-
-    for (int i = start; i <= lines.size() - 4; i += 4)
+    if (lines[i].substr(0, 2) != "T " ||
+        lines[i + 1].substr(0, 2) != "U " ||
+        lines[i + 2].substr(0, 2) != "W " ||
+        !lines[i + 3].empty())
     {
-      if (lines[i].substr(0, 2) != "T " ||
-          lines[i + 1].substr(0, 2) != "U " ||
-          lines[i + 2].substr(0, 2) != "W " ||
-          !lines[i + 3].empty())
-      {
-        continue;
-      }
-
-      std::string timestamp_str = lines[i].substr(2);
-      std::string username = lines[i + 1].substr(2);
-      std::string message = lines[i + 2].substr(2);
-
-      std::tm tm{};
-      std::time_t post_time = 0;
-
-      if (strptime(timestamp_str.c_str(), "%Y-%m-%d %H:%M:%S", &tm))
-      {
-        post_time = mktime(&tm);
-      }
-      else
-      {
-        log(ERROR, "Error parsing time string: " + timestamp_str);
-        continue;
-      }
-
-      Message msg;
-      google::protobuf::Timestamp *timestamp = msg.mutable_timestamp();
-      timestamp->set_seconds(post_time);
-      msg.set_username(username);
-      msg.set_msg(message);
-
-      posts.push_back(std::move(msg));
+      continue;
     }
 
-    ffl_mutex.lock();
-    followingFileLines[u] = lines.size();
-    ffl_mutex.unlock();
+    std::string timestamp_str = lines[i].substr(2);
+    std::string username = lines[i + 1].substr(2);
+    std::string message = lines[i + 2].substr(2);
 
-    return posts;
-  }
+    std::tm tm{};
+    std::time_t post_time = 0;
 
-  void appendTo(const std::string &filename, const std::string &timestamp_str, const std::string &username, const std::string &message)
-  {
-    std::ofstream outfile(filename, std::ios_base::app);
-    if (outfile.is_open())
+    if (strptime(timestamp_str.c_str(), "%Y-%m-%d %H:%M:%S", &tm))
     {
-      outfile << "T " << timestamp_str << "\n";
-      outfile << "U " << username << "\n";
-      outfile << "W " << message << "\n";
-      outfile.close();
+      post_time = mktime(&tm);
     }
     else
     {
-      log(ERROR, "Error opening file: " + filename);
+      log(ERROR, "Error parsing time string: " + timestamp_str);
+      continue;
     }
+
+    Message msg;
+    google::protobuf::Timestamp *timestamp = msg.mutable_timestamp();
+    timestamp->set_seconds(post_time);
+    msg.set_username(username);
+    msg.set_msg(message);
+
+    posts.push_back(std::move(msg));
   }
-};
+
+  ffl_mutex.lock();
+  followingFileLines[u] = lines.size();
+  ffl_mutex.unlock();
+
+  return posts;
+}
+
+void appendTo(const std::string &filename, const std::string &timestamp_str, const std::string &username, const std::string &message)
+{
+  std::ofstream outfile(filename, std::ios_base::app);
+  if (outfile.is_open())
+  {
+    outfile << "T " << timestamp_str << "\n";
+    outfile << "U " << username << "\n";
+    outfile << "W " << message << "\n";
+    outfile.close();
+  }
+  else
+  {
+    log(ERROR, "Error opening file: " + filename);
+  }
+}
 
 void RunServer(int clusterId, int serverId, std::string port_no, std::string coordinatorIP, std::string coordinatorPort)
 {
@@ -440,9 +441,7 @@ void RunServer(int clusterId, int serverId, std::string port_no, std::string coo
   std::cout << "Server listening on " << server_address << std::endl;
   log(INFO, "Server listening on " + server_address);
 
-  std::atomic<bool> alive = true;
-
-  std::thread heartbeat([&]()
+  std::thread heartbeat([]()
                         {
     bool registered = false;
     std::string coordinator_address = coordinatorIP + ":" + coordinatorPort;
@@ -467,30 +466,31 @@ void RunServer(int clusterId, int serverId, std::string port_no, std::string coo
       if (status.ok()) {
         log(INFO, "Server " + request.serverid() + " sent Heartbeat successfully.");
         isMaster = reply.ismaster();
-        if (isMaster)
+        if (isMaster){
           log(INFO, "Server " + request.serverid() + " is a master.");
           clusterSubdirectory= "1";
-        else
+        }
+        else{
           log(INFO, "Server " + request.serverid() + " is a slave.");
           clusterSubdirectory= "2";
+        }
         if (!registered)
           registered = true;
       } else {
-        log(ERROR, "Heartbeat failed: " + status.error_message());
+        log(ERROR, "Heartbeat failed");
       }
 
       std::this_thread::sleep_for(std::chrono::seconds(5));
     } });
 
   // update client db every 5 seconds
-  std::thread db([&]()
+  std::thread db([]()
                  {
     while (alive.load()) {
-      
       // add new clients to the client db
       std::string users = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/all_users.txt";
       std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_all_users.txt";
-      sem_t *fileSem = sem_open(semName.c_str(), O_CREAT);
+      sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
 
       sem_wait(fileSem);
       std::ifstream userStream(usersFile);
@@ -523,8 +523,9 @@ void RunServer(int clusterId, int serverId, std::string port_no, std::string coo
 
   server->Wait();
 
-  alive = false;
+  alive.store(false);
   heartbeat.join();
+  db.join();
 }
 
 int main(int argc, char **argv)
