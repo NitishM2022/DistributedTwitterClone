@@ -529,7 +529,7 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
         log(ERROR, "Error opening user file: " + usersFile);
       }
       
-      std::this_thread::sleep_for(std::chrono::seconds(5));
+      std::this_thread::sleep_for(std::chrono::seconds(2));
     } });
 
   server->Wait();
