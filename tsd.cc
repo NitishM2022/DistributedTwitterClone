@@ -527,21 +527,20 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
           }
         }
         userStream.close();
-        sem_post(fileSem);
-        sem_close(fileSem);
         log(INFO, "Client db updated successfully.");
       } else {
-        sem_post(fileSem);
-        sem_close(fileSem);
         log(ERROR, "Error opening user file: " + usersFile);
       }
+      sem_post(fileSem);
+      sem_close(fileSem);
+
 
       // following
       // update client db and write to the file
       for(const auto &client : client_db)
       {
         Client *c1 = client.second;
-        file = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + client.first + "_followers.txt";
+        std::string file = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + client.first + "_followers.txt";
         semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + client.first + "_followers.txt";
         fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
 
@@ -554,7 +553,7 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
           std::string follower;
           while (followerStream >> follower)
           {
-            if (c1->client_followers.find(follower) == client_db.end())
+            if (c1->client_followers.find(follower) == client_followers.end())
             {
               c1->client_followers.insert(follower);
             }
