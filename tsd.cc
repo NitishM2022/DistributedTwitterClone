@@ -278,6 +278,7 @@ class SNSServiceImpl final : public SNSService::Service
     if (stream->Read(&m))
     {
       u = m.username();
+      curr = getClient(u);
       log(INFO, "Timeline request from client " + u);
 
       std::vector<Message> last_posts = getLastNPosts(u, 20);
@@ -319,21 +320,25 @@ class SNSServiceImpl final : public SNSService::Service
       std::string time_str = ss.str();
 
       // have to do this withouth synchrnoizer
-      db_mutex.lock();
-      log(INFO, "Writing message to client's followers")
-      for (auto &f : curr->client_following)
-      {
-        log(INFO, "Writing message to client " + u + "'s followers " + f + " following file");
-        std::string followingFile = "./cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + f + "_following.txt";
-        std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + f + "_following.txt";
-        sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
-        
-        sem_wait(fileSem);
-        appendTo(followingFile, time_str, u, m.msg());
-        sem_post(fileSem);
-        sem_close(fileSem);
+      if (curr != nullptr){
+        db_mutex.lock();
+        log(INFO, "Writing message to client's followers")
+        for (auto &f : curr->client_following)
+        {
+          log(INFO, "Writing message to client " + u + "'s followers " + f + " following file");
+          std::string followingFile = "./cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + f + "_following.txt";
+          std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + f + "_following.txt";
+          sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
+          
+          sem_wait(fileSem);
+          appendTo(followingFile, time_str, u, m.msg());
+          sem_post(fileSem);
+          sem_close(fileSem);
+        }
+        db_mutex.unlock();
+      }else{
+        log(ERROR, "Client not found: " + u);
       }
-      db_mutex.unlock();
 
       log(INFO, "Writing received message from client " + u + " to timeline file");
       appendTo("./cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + u + "_timeline.txt", time_str, u, m.msg());
