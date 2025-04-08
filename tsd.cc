@@ -334,6 +334,7 @@ class SNSServiceImpl final : public SNSService::Service
           appendTo(followingFile, time_str, u, m.msg());
           sem_post(fileSem);
           sem_close(fileSem);
+          log(INFO, "Wrote message to client " + u + "'s followers " + f + " following file");
         }
         db_mutex.unlock();
       }else{
@@ -341,7 +342,7 @@ class SNSServiceImpl final : public SNSService::Service
       }
 
       log(INFO, "Writing received message from client " + u + " to timeline file");
-      appendTo("./cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + u + "_timeline.txt", time_str, u, m.msg());
+      appendTo("./cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + u + "_timeline.txt", time_str, u, m.msg());
     }
 
     following.join();
