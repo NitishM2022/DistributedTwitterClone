@@ -140,7 +140,7 @@ class CoordServiceImpl final : public CoordService::Service
                     log(INFO, "Heartbeat received from server " + std::to_string(serverID));
                     clusters[clusterID - 1][index]->last_heartbeat = getTimeNow();
                     clusters[clusterID - 1][index]->missed_heartbeat = false;
-                    confirmation->set_ismaster(clusters[clusterID - 1][index]->isMaster);
+                    confirmation->set_ismaster(true);
                 }
             }
             else
