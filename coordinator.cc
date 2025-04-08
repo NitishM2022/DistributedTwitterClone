@@ -170,7 +170,9 @@ class CoordServiceImpl final : public CoordService::Service
         if (clusterID >= 1 && clusterID <= clusters.size() && !clusters[clusterID - 1].empty()) {
             for (const auto& server_node : clusters[clusterID - 1]) {
                 // Client only talks to master servers & master servers are always active
+                log(INFO, "Checking server " + std::to_string(server_node->serverID) + " for client " + std::to_string(clientID));
                 if (server_node->type == "server" && server_node->isMaster) {
+                    log(INFO, "Found active master server for client " + std::to_string(clientID) + " in cluster " + std::to_string(clusterID));
                     serverinfo->set_serverid(server_node->serverID);
                     serverinfo->set_hostname(server_node->hostname);
                     serverinfo->set_port(server_node->port);
