@@ -457,7 +457,6 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
     bool registered = false;
     std::string coordinator_address = coordinatorIP + ":" + coordinatorPort;
     std::unique_ptr<csce438::CoordService::Stub> stub = csce438::CoordService::NewStub(grpc::CreateChannel(coordinator_address, grpc::InsecureChannelCredentials()));
-    grpc::ClientContext context;
 
     csce438::ServerInfo request;
     request.set_serverid(serverId);
@@ -465,13 +464,14 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
     request.set_port(port_no);
     request.set_type("server");
     request.set_clusterid(clusterID);
-    csce438::Confirmation reply;
 
     while (alive.load()) {
       if (!registered){
         context.AddMetadata("clusterid", std::to_string(clusterID));
       }
 
+      grpc::ClientContext context;
+      csce438::Confirmation reply;
       grpc::Status status = stub->Heartbeat(&context, request, &reply);
 
       if (status.ok()) {
@@ -529,7 +529,7 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
         log(ERROR, "Error opening user file: " + usersFile);
       }
       
-      std::this_thread::sleep_for(std::chrono::seconds(2));
+      std::this_thread::sleep_for(std::chrono::seconds(5));
     } });
 
   server->Wait();
