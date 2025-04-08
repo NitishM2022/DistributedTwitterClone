@@ -96,7 +96,7 @@ int Client::connectTo()
   // ------------------------------------------------------------
 
   std::string login_info = hostname + ":" + port;
-  Log(INFO, "Connecting to " + login_info);
+  log(INFO, "Connecting to " + login_info);
   stub_ = SNSService::NewStub(grpc::CreateChannel(login_info, grpc::InsecureChannelCredentials()));
   IReply reply = Login();
   if (reply.comm_status != SUCCESS)
