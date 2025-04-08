@@ -470,8 +470,6 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
       if (!registered){
         context.AddMetadata("clusterid", std::to_string(clusterID));
         registered = true;
-      }else{
-        context = grpc::ClientContext();
       }
 
       csce438::Confirmation reply;
