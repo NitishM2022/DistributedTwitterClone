@@ -137,6 +137,7 @@ class SNSServiceImpl final : public SNSService::Service
     Client *c = getClient(u);
 
     // Add followers to the list reply
+    log(INFO, "Attempting to add followers to list reply");
     if (c != nullptr)
     {
       db_mutex.lock();
@@ -180,12 +181,12 @@ class SNSServiceImpl final : public SNSService::Service
       return Status::OK;
     }
 
-    // update client db and write to the file
+    
+    db_mutex.lock();
     std::string file = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + c1->username + "_follow_list.txt";
     std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + c1->username + "_follow_list.txt";
     sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
-    
-    db_mutex.lock();
+
     sem_wait(fileSem);
     std::ofstream followingStream(file, std::ios::app | std::ios::out | std::ios::in);
     followingStream << c2->username << std::endl;
@@ -194,23 +195,10 @@ class SNSServiceImpl final : public SNSService::Service
     followingStream.close();
     sem_post(fileSem);
     sem_close(fileSem);
-
-
-    file = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + c2->username + "_followers.txt";
-    semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + c2->username + "_followers.txt";
-    fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
-
-    sem_wait(fileSem);
-    std::ofstream followerStream(file, std::ios::app | std::ios::out | std::ios::in);
-    followerStream << c1->username << std::endl;
-    followerStream.close();
-    c2->client_followers.insert(c1->username);
-
-    sem_post(fileSem);
-    sem_close(fileSem);
+    // Don't insert into c2 client_followers here, as it is done in the consumeClientRelations function
+    db_mutex.unlock();
 
     reply->set_msg("follow successful");
-    db_mutex.unlock();
 
     return Status::OK;
   }
@@ -519,14 +507,15 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
       std::this_thread::sleep_for(std::chrono::seconds(5));
       
       // add new clients to the client db
+      db_mutex.lock();
       std::string usersFile = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/all_users.txt";
       std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_all_users.txt";
 
       sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
-      db_mutex.lock();
       sem_wait(fileSem);
       std::ifstream userStream(usersFile);
 
+      //users
       if (userStream.is_open()) {
         std::string user;
         while (userStream >> user) {
@@ -540,14 +529,48 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
         userStream.close();
         sem_post(fileSem);
         sem_close(fileSem);
-        db_mutex.unlock();
         log(INFO, "Client db updated successfully.");
       } else {
         sem_post(fileSem);
         sem_close(fileSem);
-        db_mutex.unlock();
         log(ERROR, "Error opening user file: " + usersFile);
       }
+
+      // following
+      // update client db and write to the file
+      for(const auto &client : client_db)
+      {
+        Client *c1 = client.second;
+        file = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + client + "_followers.txt";
+        semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + client + "_followers.txt";
+        fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
+
+        sem_wait(fileSem);
+        std::ifstream followerStream(file, std::ios::in);
+        if (followerStream.is_open())
+        {
+          log(INFO, "Follower file opened successfully.");
+          // read the file and update the client db
+          std::string follower;
+          while (followerStream >> follower)
+          {
+            if (c1->client_followers().find(follower) == client_db.end())
+            {
+              c1->client_followers.insert(follower);
+            }
+          }
+          followerStream.close();
+        }else{
+          log(ERROR, "Error opening follower file: " + file);
+          sem_post(fileSem);
+          sem_close(fileSem);
+          continue;
+        }
+
+        sem_post(fileSem);
+        sem_close(fileSem);
+      }
+      db_mutex.unlock();
       
     } });
 
