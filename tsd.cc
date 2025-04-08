@@ -248,6 +248,7 @@ class SNSServiceImpl final : public SNSService::Service
         db_mutex.unlock();
         reply->set_msg("login succeeded");
       }
+      return Status::OK;
     }
     else
     {
@@ -256,28 +257,27 @@ class SNSServiceImpl final : public SNSService::Service
       new_client->username = request->username();
       new_client->connected = true;
 
-      db_mutex.lock();
-      client_db[new_client->username] = new_client;
-      db_mutex.unlock();
-      log(INFO, "Client " + new_client->username + " added to client_db");
-
-      reply->set_msg("login succeeded: new user created");
-
       // must add the new user to the all_users.txt file
       std::string usersFile = "./cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/all_users.txt";
       std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_all_users.txt";
+      
       sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
 
+      // Actual data modification
+      db_mutex.lock();
       sem_wait(fileSem);
 
       std::ofstream userStream(usersFile, std::ios::app | std::ios::out | std::ios::in);
       userStream << new_client->username << std::endl;
+      client_db[new_client->username] = new_client;
+      log(INFO, "Client " + new_client->username + " added to client_db");
+      reply->set_msg("login succeeded: new user created");
 
       sem_post(fileSem);
       sem_close(fileSem);
+      db_mutex.unlock();
     }
 
-    log(INFO, "Login request from " + request->username() + " completed");
     return Status::OK;
   }
 
@@ -516,8 +516,8 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
       std::string usersFile = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/all_users.txt";
       std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_all_users.txt";
 
-      db_mutex.lock();
       sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
+      db_mutex.lock();
       sem_wait(fileSem);
       std::ifstream userStream(usersFile);
 
