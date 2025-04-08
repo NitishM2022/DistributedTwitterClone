@@ -568,6 +568,7 @@ int main(int argc, char **argv)
 
 void run_synchronizer(std::string coordIP, std::string coordPort, std::string port, int synchID, SynchronizerRabbitMQ &rabbitMQ)
 {
+    log(INFO, "Starting synchronizer with ID: " + std::to_string(synchID));
     // setup coordinator stub
     std::string target_str = coordIP + ":" + coordPort;
     std::unique_ptr<CoordService::Stub> coord_stub_;
@@ -582,6 +583,7 @@ void run_synchronizer(std::string coordIP, std::string coordPort, std::string po
     msg.set_type("follower");
 
     // Make directory for cluster
+    log(INFO, "Creating directories for cluster " + std::to_string(clusterID));
     std::string masterDir = "cluster_" + std::to_string(clusterID) + "/1";
     std::string slaveDir = "cluster_" + std::to_string(clusterID) + "/2";
     if (!std::filesystem::exists(masterDir)) {
