@@ -567,32 +567,32 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
           std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + client.first + "_follow_list.txt";
           fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
           sem_wait(fileSem);
-          std::ifstream followingStream(file, std::ios::in);
+          std::ifstream readFollowingStream(file, std::ios::in);
           std::unordered_set<std::string> follows;
-          if (followingStream.is_open())
+          if (readFollowingStream.is_open())
           {
             log(INFO, "Follow List file opened successfully for + " + client.first);
             std::string following;
-            while (followingStream >> following)
+            while (readFollowingStream >> following)
             {
               follows.insert(following);
               if(client.second->client_following.find(following) == client.second->client_following.end()){
                 client.second->client_following.insert(following);
               }
             }
-            followingStream.close();
+            readFollowingStream.close();
           }else{
             log(ERROR, "Error opening following file: " + file);
           }
 
           // write to the file
-          std::ofstream followingStream(file, std::ios::app | std::ios::out | std::ios::in);
+          std::ofstream writeFollowingStream(file, std::ios::app | std::ios::out | std::ios::in);
           for(const auto &follow : client.second->client_following){
             if(follows.find(follow) == follows.end()){
-              followingStream << follow << std::endl;
+              writeFollowingStream << follow << std::endl;
             }
           }
-          followingStream.close();
+          writeFollowingStream.close();
           
           sem_post(fileSem);
           sem_close(fileSem);
