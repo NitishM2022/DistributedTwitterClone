@@ -248,6 +248,7 @@ class SNSServiceImpl final : public SNSService::Service
     }
     else
     {
+      log(INFO, "Creating new client " + request->username());
       Client *new_client = new Client();
       new_client->username = request->username();
       new_client->connected = true;
@@ -272,6 +273,7 @@ class SNSServiceImpl final : public SNSService::Service
       sem_close(fileSem);
     }
 
+    log(INFO, "Login request from " + request->username() + " completed");
     return Status::OK;
   }
 
