@@ -115,7 +115,6 @@ class CoordServiceImpl final : public CoordService::Service
             else
             {
                 log(INFO, "Heartbeat received from new synchronizer " + std::to_string(serverID));
-                
                 // When a new synchronizer is added, check if there is already a master in the cluster
                 bool masterPresent = findMaster(clusters[clusterID - 1], type);
                 confirmation->set_ismaster(!masterPresent);
@@ -167,7 +166,7 @@ class CoordServiceImpl final : public CoordService::Service
         log(INFO, "GetServer called by client " + std::to_string(clientID) + " for cluster " + std::to_string(clusterID));
 
         v_mutex.lock();
-
+        log(INFO, "Mutex unlocked " + std::to_string(clientID) + " for cluster " + std::to_string(clusterID));
         if (clusterID >= 1 && clusterID <= clusters.size() && !clusters[clusterID - 1].empty()) {
             for (const auto& server_node : clusters[clusterID - 1]) {
                 // Client only talks to master servers & master servers are always active
