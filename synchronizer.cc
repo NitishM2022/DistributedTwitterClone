@@ -657,6 +657,13 @@ std::vector<std::string> get_lines_from_file(std::string filename, std::string c
 
     sem_wait(fileSem);
     file.open(filename);
+    if (!file.is_open()) {
+        log(ERROR, "Error opening file: " + filename);
+        sem_post(fileSem);
+        sem_close(fileSem);
+        return users;
+    }
+
     if (file.peek() == std::ifstream::traits_type::eof())
     {
         // return empty vector if empty file
