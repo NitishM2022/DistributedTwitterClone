@@ -244,25 +244,11 @@ class SNSServiceImpl final : public SNSService::Service
       new_client->username = request->username();
       new_client->connected = true;
 
-      // must add the new user to the all_users.txt file
-      std::string usersFile = "./cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/all_users.txt";
-      std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_all_users.txt";
-
-      sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
-
       // Actual data modification
       db_mutex.lock();
-      sem_wait(fileSem);
-
-      std::ofstream userStream(usersFile, std::ios::app | std::ios::out | std::ios::in);
-      userStream << new_client->username << std::endl;
       client_db[new_client->username] = new_client;
-      log(INFO, "Client " + new_client->username + " added to client_db");
-      reply->set_msg("login succeeded: new user created");
-
-      sem_post(fileSem);
-      sem_close(fileSem);
       db_mutex.unlock();
+      reply->set_msg("login succeeded: new user created");
     }
 
     return Status::OK;
@@ -545,28 +531,41 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
       
       // add new clients to the client db
       db_mutex.lock();
+
       std::string usersFile = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/all_users.txt";
       std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_all_users.txt";
-
       sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
+      
       sem_wait(fileSem);
-      std::ifstream userStream(usersFile);
-
-      //users
-      if (userStream.is_open()) {
+      std::ifstream readUserStream(usersFile);
+      std::unordered_set<std::string> users;
+      //file to db
+      if (readUserStream.is_open()) {
         std::string user;
-        while (userStream >> user) {
+        while (readUserStream >> user) {
           if (client_db.find(user) == client_db.end()) {
+            users.insert(user);
             Client *new_client = new Client();
             new_client->username = user;
-
             client_db[new_client->username] = new_client;
           }
         }
-        userStream.close();
+        readUserStream.close();
       } else {
         log(ERROR, "Error opening user file: " + usersFile);
       }
+
+      // db to file
+      std::ofstream writeUserStream(usersFile, std::ios::app | std::ios::out | std::ios::in);
+      for (const auto &client : client_db)
+      {
+        if (users.find(client.first) == users.end())
+        {
+          writeUserStream << client.first << std::endl;
+          log(INFO, "Client " + client.first + " added to all_users file");
+        }
+      }
+      writeUserStream.close();
       sem_post(fileSem);
       sem_close(fileSem);
 
