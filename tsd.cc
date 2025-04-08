@@ -304,10 +304,13 @@ class SNSServiceImpl final : public SNSService::Service
     }
 
     // thread to monitor u_following.txt file
-    std::thread following([&]()
+    // I think it is ok for this thread to be here since this function can only be called once
+    std::thread following([=]()
                           {
+      log(INFO, "Starting following thread for client " + u);
       while (alive.load()) {
         // -1 indicates get all posts after followingFileLines
+        log(INFO, "Getting last N posts for client " + u);
         std::vector<Message> newPosts = getLastNPosts(u, -1);
         for (const auto &post : newPosts)
           stream->Write(post);
@@ -318,6 +321,7 @@ class SNSServiceImpl final : public SNSService::Service
     // update client timeline file
     while (stream->Read(&m))
     {
+      log(INFO, "Writing received message from client " + u + " to timeline file");
       std::time_t time = m.timestamp().seconds();
       std::tm *ltime = std::localtime(&time);
       std::stringstream ss;
