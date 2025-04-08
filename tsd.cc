@@ -195,7 +195,8 @@ class SNSServiceImpl final : public SNSService::Service
     followingStream.close();
     sem_post(fileSem);
     sem_close(fileSem);
-    // Don't insert into c2 client_followers here, as it is done in the consumeClientRelations function
+    c2->client_followers.insert(c1->username);
+    // not going to edit the c2 followers file, since when the synchronizer comes into play, it will move the follow_list to followers
     db_mutex.unlock();
 
     reply->set_msg("follow successful");
