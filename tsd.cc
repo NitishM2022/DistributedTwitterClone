@@ -291,7 +291,7 @@ class SNSServiceImpl final : public SNSService::Service
       log(INFO, "Timeline request from client " + u);
 
       std::vector<Message> last_posts = getLastNPosts(u, 20);
-      log(INFO, "Got last 20 posts for client " + u);
+      log(INFO, "Got last N posts for client " + u);
 
       for (const auto &post : last_posts)
       {
@@ -352,7 +352,7 @@ Client *getClient(const std::string &username)
 std::vector<Message> getLastNPosts(std::string u, int n)
 {
   std::vector<Message> posts;
-
+  log(INFO, "Getting last N posts for user " + u);
   // Get last n posts from the user's following file
   std::string followingFile = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + u + "_following.txt";
   std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + u + "_following.txt";
@@ -361,6 +361,7 @@ std::vector<Message> getLastNPosts(std::string u, int n)
   sem_wait(fileSem);
   std::ifstream infile(followingFile);
 
+  log(INFO, "Attempting to open following file for user " + u);
   if (!infile.is_open())
   {
     log(INFO, "No posts found for user " + u);
@@ -539,7 +540,6 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
           }
         }
         userStream.close();
-        log(INFO, "Client db updated successfully.");
       } else {
         log(ERROR, "Error opening user file: " + usersFile);
       }
