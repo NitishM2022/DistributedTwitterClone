@@ -242,7 +242,6 @@ void RunServer(std::string port_no)
     // Wait for the server to shutdown. Note that some other thread must be
     // responsible for shutting down the server for this call to ever return.
     server->Wait();
-
     alive.store(false);
 }
 
@@ -262,6 +261,10 @@ int main(int argc, char **argv)
             std::cerr << "Invalid Command Line Argument\n";
         }
     }
+
+    std::string log_file_name = std::string("coordinator-") + port;
+    google::InitGoogleLogging(log_file_name.c_str());
+    log(INFO, "Logging Initialized. Coordinator starting...");
     RunServer(port);
     return 0;
 }

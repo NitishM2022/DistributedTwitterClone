@@ -543,7 +543,7 @@ int main(int argc, char **argv)
 
     std::string log_file_name = std::string("synchronizer-") + port;
     google::InitGoogleLogging(log_file_name.c_str());
-    log(INFO, "Logging Initialized. Server starting...");
+    log(INFO, "Logging Initialized. Synchronizer starting...");
 
     coordAddr = coordIP + ":" + coordPort;
     clusterID = ((synchID - 1) % 3) + 1;
