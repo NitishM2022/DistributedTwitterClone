@@ -562,6 +562,7 @@ int main(int argc, char **argv)
     serverInfo.set_clusterid(clusterID);
     Heartbeat(coordIP, coordPort, serverInfo, synchID);
 
+    coordinator_stub_ = std::unique_ptr<CoordService::Stub>(CoordService::NewStub(grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials())));
     RunServer(coordIP, coordPort, port, synchID);
     return 0;
 }
@@ -573,7 +574,6 @@ void run_synchronizer(std::string coordIP, std::string coordPort, std::string po
     std::string target_str = coordIP + ":" + coordPort;
     log(INFO, "Connecting to coordinator at: " + target_str);
     log(INFO, "Creating gRPC channel to coordinator");
-    coordinator_stub_ = std::unique_ptr<CoordService::Stub>(CoordService::NewStub(grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials())));
     if (!coordinator_stub_) {
         log(ERROR, "Failed to create gRPC channel to coordinator: " + target_str);
     }
