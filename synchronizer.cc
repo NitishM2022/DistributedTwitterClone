@@ -401,7 +401,7 @@ public:
 
                     for (int i = timelineLengths[clientId]; i < root[clientId].size(); i++)
                     {
-                        const auto &post = root[client][i];
+                        const auto &post = root[clientId][i];
                         timelineStream << "T " << post["timestamp"].asString() << "\n";
                         timelineStream << "U " << post["username"].asString() << "\n";
                         timelineStream << "W " << post["message"].asString() << "\n";
@@ -419,9 +419,9 @@ public:
                         sem_wait(fileSem);
                         std::ofstream followingStream(followingFile, std::ios::app | std::ios::out | std::ios::in);
 
-                        for(int i = followingLength; i < root[client].size(); i++)
+                        for(int i = followingLength; i < root[clientId].size(); i++)
                         {
-                            const auto &post = root[client][i];
+                            const auto &post = root[clientId][i];
                             followingStream << "T " << post["timestamp"].asString() << "\n";
                             followingStream << "U " << post["username"].asString() << "\n";
                             followingStream << "W " << post["message"].asString() << "\n";
@@ -686,16 +686,15 @@ void Heartbeat(std::string coordinatorIp, std::string coordinatorPort, ServerInf
     grpc::Status status = stub->Heartbeat(&context, serverInfo, &reply);
     if (status.ok())
     {
-        log(INFO, "Synchronizer " + serverInfo.serverid() + " Heartbeat sent successfully");
-        if (reply.ismaster())
+        log(INFO, "Synchronizer " + std::to_string(serverInfo.serverid()) + " Heartbeat sent successfully");        if (reply.ismaster())
         {
-            log(INFO, "Synchronizer " + serverInfo.serverid() + " is a master");
+            log(INFO, "Synchronizer " + std::to_string(serverInfo.serverid()) + " is a master");
             isMaster = true;
             clusterSubdirectory = "1";
         }
         else
         {
-            log(INFO, "Synchronizer " + serverInfo.serverid() + " is a slave");
+            log(INFO, "Synchronizer " + std::to_string(serverInfo.serverid()) + " is a slave");
             isMaster = false;
             clusterSubdirectory = "2";
         }

@@ -464,14 +464,14 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
       grpc::Status status = stub->Heartbeat(&context, request, &reply);
 
       if (status.ok()) {
-        log(INFO, std::string("Server ") + request.serverid() + " sent Heartbeat successfully.");
+        log(INFO, "Server " + std::to_string(request.serverid()) + " sent Heartbeat successfully.");
         isMaster = reply.ismaster();
         if (isMaster){
-          log(INFO, std::string("Server ") + request.serverid() + " is a master.");
+          log(INFO, "Server " + std::to_string(request.serverid()) + " is a master.");
           clusterSubdirectory= "1";
         }
         else{
-          log(INFO, std::string("Server ") + request.serverid() + " is a slave.");
+          log(INFO, "Server " + std::to_string(request.serverid()) + " is a slave.");
           clusterSubdirectory= "2";
         }
         if (!registered)
@@ -484,7 +484,7 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
     } });
 
   // update client db every 5 seconds
-  std::thread db([]()
+  std::thread db([&]()
                  {
     while (alive.load()) {
       // add new clients to the client db
