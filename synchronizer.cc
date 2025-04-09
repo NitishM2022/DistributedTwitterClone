@@ -915,8 +915,8 @@ std::vector<std::string> getMyFollowers(int ID)
     std::vector<std::string> followers;
     std::string clientID = std::to_string(ID);
 
-    std::string file = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + ID + "_followers.txt";
-    std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + ID + "_followers.txt";
+    std::string file = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + std::to_string(ID) + "_followers.txt";
+    std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + std::to_string(ID) + "_followers.txt";
     sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
 
     sem_wait(fileSem);
