@@ -80,7 +80,7 @@ std::unordered_map<std::string, int> timelineLengths;
 // server list
 std::vector<int> server_ids;
 std::vector<std::string> hosts, ports, types, clusterIDs;
-std::vector<bool> isMastes;
+std::vector<bool> isMasters;
 
 std::vector<std::string> get_lines_from_file(std::string, std::string);
 std::vector<std::string> get_all_users_func(int);
