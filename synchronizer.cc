@@ -879,7 +879,7 @@ std::vector<std::string> get_all_users_func(int synchID)
 }
 
 std::vector<std::string> get_tl_or_fl(int synchID, int clientID, bool tl)
-{s
+{
     // std::string master_fn = "./master"+std::to_string(synchID)+"/"+std::to_string(clientID);
     // std::string slave_fn = "./slave"+std::to_string(synchID)+"/" + std::to_string(clientID);
     std::string master_fn = "cluster_" + std::to_string(clusterID) + "/1/" + std::to_string(clientID);
