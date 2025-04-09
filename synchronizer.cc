@@ -96,14 +96,31 @@ private:
     int port;
     int synchID;
 
-    void setupRabbitMQ()
-    {
+    void setupRabbitMQ() {
         conn = amqp_new_connection();
         amqp_socket_t *socket = amqp_tcp_socket_new(conn);
-        amqp_socket_open(socket, hostname.c_str(), port);
-        amqp_login(conn, "/", 0, 131072, 0, AMQP_SASL_METHOD_PLAIN, "guest", "guest");
+        if (!socket) {
+            log(ERROR, "Failed to create TCP socket");
+            exit(1);
+        }
+        int status = amqp_socket_open(socket, hostname.c_str(), port);
+        if (status != AMQP_STATUS_OK) {
+            log(ERROR, "Failed to open TCP socket: " + std::to_string(status));
+            exit(1);
+        }
+        amqp_rpc_reply_t loginReply = amqp_login(conn, "/", 0, 131072, 0, AMQP_SASL_METHOD_PLAIN, "guest", "guest");
+        if (loginReply.reply_type != AMQP_RESPONSE_NORMAL) {
+            log(ERROR, "Login failed");
+            exit(1);
+        }
         amqp_channel_open(conn, channel);
+        amqp_rpc_reply_t channelReply = amqp_get_rpc_reply(conn);
+        if (channelReply.reply_type != AMQP_RESPONSE_NORMAL) {
+            log(ERROR, "Channel open failed");
+            exit(1);
+        }
     }
+
 
     void declareQueue(const std::string &queueName)
     {
@@ -164,35 +181,27 @@ public:
     }
 
 
-    std::pair<std::string, std::string> consumeMessage(int timeout_ms = 5000)
-    {
+    std::pair<std::string, std::string> consumeMessage() {
         amqp_envelope_t envelope;
         amqp_maybe_release_buffers(conn);
 
-        struct timeval timeout;
-        timeout.tv_sec = timeout_ms / 1000;
-        timeout.tv_usec = (timeout_ms % 1000) * 1000;
+        // This call will block indefinitely since we pass a null timeout.
+        amqp_rpc_reply_t res = amqp_consume_message(conn, &envelope, nullptr, 0);
 
-        amqp_rpc_reply_t res = amqp_consume_message(conn, &envelope, &timeout, 0);
-
-        if (res.reply_type != AMQP_RESPONSE_NORMAL) {
-            // Check for specific timeout error
-            if (res.reply_type == AMQP_RESPONSE_LIBRARY_EXCEPTION &&
-                res.library_error == AMQP_STATUS_TIMEOUT) {
-                // This is just a timeout, not a real error
-                return {"", ""};
-            }
-            
-            log(WARNING, "Error consuming message: " + std::to_string(res.reply_type));
-            return {"", ""};
+        // In case of an error that is not a normal reply, log it.
+        // (In a production system, consider adding error-handling/retry logic.)
+        while (res.reply_type != AMQP_RESPONSE_NORMAL) {
+            log(WARNING, "Error consuming message: " + std::to_string(res.reply_type) + ". Retrying...");
+            res = amqp_consume_message(conn, &envelope, nullptr, 0);
         }
 
+        // Once a message is successfully consumed, extract and return it.
         std::string message(static_cast<char *>(envelope.message.body.bytes), envelope.message.body.len);
-        std::string routing_key((char *)envelope.routing_key.bytes, envelope.routing_key.len);
-                
+        std::string routing_key(static_cast<char *>(envelope.routing_key.bytes), envelope.routing_key.len);
         amqp_destroy_envelope(&envelope);
         return {message, routing_key};
     }
+
 
     void publishUserList()
     {
@@ -567,7 +576,7 @@ void RunServer(std::string coordIP, std::string coordPort, std::string port_no, 
         rabbitMQ.setupConsumer("synch" + std::to_string(synchID) + "_timeline_queue");
 
         while (true) {
-            std::pair<std::string, std::string> msg_pair = rabbitMQ.consumeMessage(5000);
+            std::pair<std::string, std::string> msg_pair = rabbitMQ.consumeMessage();
             if (msg_pair.first.empty()) {
                 continue;
             }
