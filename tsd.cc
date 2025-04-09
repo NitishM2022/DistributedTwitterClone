@@ -411,7 +411,7 @@ std::vector<Message> getLastNPosts(const std::string &u, int n)
   {
     if (lines[i].substr(0, 2) != "T " ||
         lines[i + 1].substr(0, 2) != "U " ||
-        lines[i + 2].substr(0, 2) != "W " ||)
+        lines[i + 2].substr(0, 2) != "W ")
     {
       continue;
     }
