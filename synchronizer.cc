@@ -178,11 +178,10 @@ public:
             for (int i = 1; i <= total_number_of_registered_synchronizers; i++)
             {
                 // Dont want to send to self
-                if (followerServers.serverid(i) == synchID)
+                if (followerServers.serverid(i - 1) == synchID)
                 {
                     continue;
                 }
-                total_number_of_registered_synchronizers = followerServers.serverid_size();
                 std::string queueName = "synch" + std::to_string(i) + "_users_queue";
                 publishMessage("synch" + std::to_string(synchID) + "_users_queue", message);
                 log(INFO, "Published user list to " + queueName);
@@ -257,7 +256,7 @@ public:
 
         for (int i = 1; i <= total_number_of_registered_synchronizers; i++)
         {
-            if(followerServers.serverid(i) == synchID)
+            if(followerServers.serverid(i - 1) == synchID)
             {
                 continue;
             }
