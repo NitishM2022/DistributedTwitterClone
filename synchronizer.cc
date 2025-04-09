@@ -79,7 +79,8 @@ std::unordered_map<std::string, int> timelineLengths;
 
 // server list
 std::vector<int> server_ids;
-std::vector<std::string> hosts, ports, type, clusterIDs, isMasters;
+std::vector<std::string> hosts, ports, types, clusterIDs;
+std::vector<bool> isMastes;
 
 std::vector<std::string> get_lines_from_file(std::string, std::string);
 std::vector<std::string> get_all_users_func(int);
@@ -447,6 +448,7 @@ public:
 
                     if (timelineLengths.find(clientId) == timelineLengths.end())
                         timelineLengths[clientId] = 0;
+                    int timelinePos = timelineLengths[clientId];
 
                     log(INFO, "Updating timeline for client " + clientId);
                     std::vector<std::string> followers = getFollowersOfUser(std::stoi(clientId));
@@ -461,7 +463,7 @@ public:
                         sem_wait(fileSem);
                         std::ofstream followingStream(followingFile, std::ios::app | std::ios::out | std::ios::in);
 
-                        for (int i = followingLength; i < root[clientId].size(); i++)
+                        for (int i = timelinePos; i < root[clientId].size(); i++)
                         {
                             const auto &post = root[clientId][i];
                             followingStream << "T " << post["timestamp"].asString() << "\n";
@@ -687,9 +689,9 @@ void run_synchronizer(std::string coordIP, std::string coordPort, std::string po
         {
             ports.push_back(port);
         }
-        for (std::string type : followerServers.type())
+        for (std::string types : followerServers.type())
         {
-            type.push_back(type);
+            types.push_back(type);
         }
         for (std::string clusterID : followerServers.clusterid())
         {
