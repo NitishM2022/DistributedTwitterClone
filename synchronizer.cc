@@ -568,6 +568,9 @@ void RunServer(std::string coordIP, std::string coordPort, std::string port_no, 
 
         while (true) {
             std::pair<std::string, std::string> msg_pair = rabbitMQ.consumeMessage(5000);
+            if (msg_pair.first.empty()) {
+                continue;
+            }
             log(INFO, "Received message from RabbitMQ :\"D");
             log(INFO, "Message: " + msg_pair.first);
 
@@ -586,6 +589,7 @@ void RunServer(std::string coordIP, std::string coordPort, std::string port_no, 
                 } else {
                     log(WARNING, "Received message with unknown routing key: " + routingKey);
                 }
+                thread::sleep_for(std::chrono::seconds(5));
             }
         } });
 
