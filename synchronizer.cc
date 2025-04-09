@@ -445,12 +445,8 @@ public:
             {
                 for (const auto &clientId : root.getMemberNames())
                 {
-                    std::string timelineFile = "./cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + clientId + "_timeline.txt";
-                    std::ofstream timelineStream(timelineFile, std::ios::app | std::ios::out | std::ios::in);
-
                     if (timelineLengths.find(clientId) == timelineLengths.end())
                         timelineLengths[clientId] = 0;
-                    int timelinePos = timelineLengths[clientId];
 
                     log(INFO, "Updating timeline for client " + clientId);
                     std::vector<std::string> followers = getFollowersOfUser(std::stoi(clientId));
@@ -465,7 +461,7 @@ public:
                         sem_wait(fileSem);
                         std::ofstream followingStream(followingFile, std::ios::app | std::ios::out | std::ios::in);
 
-                        for (int i = timelinePos; i < root[clientId].size(); i++)
+                        for (int i = timelineLengths[clientId]; i < root[clientId].size(); i++)
                         {
                             const auto &post = root[clientId][i];
                             followingStream << "T " << post["timestamp"].asString() << "\n";
@@ -473,6 +469,8 @@ public:
                             followingStream << "W " << post["message"].asString() << "\n";
                             followingStream << "\n";
                         }
+                        timelineLengths[clientId] = root[clientId].size();
+                        followingStream.close();
 
                         sem_post(fileSem);
                         sem_close(fileSem);
