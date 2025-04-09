@@ -762,7 +762,10 @@ bool file_contains_user(std::string filename, std::string user)
     std::vector<std::string> users;
     // check username is valid
 
+    log(INFO, "Checking if user " + user + " exists in file " + filename);
     users = get_lines_from_file(filename);
+    log(INFO, "Number of users in file: " + std::to_string(users.size()));
+
     for (int i = 0; i < users.size(); i++)
     {
         std::cout<<"Checking if "<<user<<" = "<<users[i]<<std::endl;
@@ -772,7 +775,7 @@ bool file_contains_user(std::string filename, std::string user)
             return true;
         }
     }
-    std::cout<<"not found"<<std::endl;
+    log(INFO, "User " + user + " not found in file " + filename);
     return false;
 }
 
@@ -799,16 +802,6 @@ std::vector<std::string> get_all_users_func(int synchID)
     std::vector<std::string> slave_user_list = get_lines_from_file(slave_users_file);
     sem_post(fileSemSlave);
     sem_close(fileSemSlave);
-
-    // idk why this is necessary but it is
-    // remove duplicates
-    std::unordered_set<std::string> unique_users(master_user_list.begin(), master_user_list.end());
-    // convert back
-    master_user_list.assign(unique_users.begin(), unique_users.end());
-    unique_users.clear();
-    unique_users.insert(slave_user_list.begin(), slave_user_list.end());
-    // convert back
-    slave_user_list.assign(unique_users.begin(), unique_users.end());
 
     if (master_user_list.size() >= slave_user_list.size())
         return master_user_list;
