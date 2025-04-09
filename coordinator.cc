@@ -102,6 +102,8 @@ class CoordServiceImpl final : public CoordService::Service
         std::string type = serverinfo->type();
         int clusterID = serverinfo->clusterid();
 
+        log(INFO, "Heartbeat received from " + std::to_string(serverID) + " of type " + type + " in cluster " + std::to_string(clusterID));
+
         if (type == "synchronizer")
         {
             v_mutex.lock();
@@ -134,7 +136,7 @@ class CoordServiceImpl final : public CoordService::Service
             auto clusterIDIter = metadata.find("clusterid");
 
             v_mutex.lock();
-            if (clusterIDIter != metadata.end() && findServerByAddr(clusters[clusterID - 1], hostname, port, type) == -1) // already registered
+            if (clusterIDIter != metadata.end() && findServerByAddr(clusters[clusterID - 1], hostname, port, type) == -1)
             {
                 log(INFO, "Heartbeat received from new server " + std::to_string(serverID) + " in cluster " + std::to_string(clusterID));
                 // When a new server is added, check if there is already a master in the cluster
