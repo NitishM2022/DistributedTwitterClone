@@ -111,13 +111,64 @@ private:
                            0, 0, 0, 0, amqp_empty_table);
     }
 
+    void setupConsumer(const std::string &queueName)
+    {
+        amqp_basic_consume(
+            conn, channel,
+            amqp_cstring_bytes(queueName.c_str()),
+            amqp_empty_bytes, 0, 1, 0, amqp_empty_table);
+
+        amqp_rpc_reply_t reply = amqp_get_rpc_reply(conn);
+        if (reply.reply_type != AMQP_RESPONSE_NORMAL)
+        {
+            log(ERROR, "Failed to set up consumer for queue: " + queueName);
+        }
+        else
+        {
+            log(INFO, "Successfully set up consumer for queue: " + queueName);
+        }
+    }
+
     void publishMessage(const std::string &queueName, const std::string &message)
     {
-        amqp_basic_publish(conn, channel, amqp_empty_bytes, amqp_cstring_bytes(queueName.c_str()),
-                           0, 0, NULL, amqp_cstring_bytes(message.c_str()));
+        int result = amqp_basic_publish(
+            conn, channel, 
+            amqp_empty_bytes, 
+            amqp_cstring_bytes(queueName.c_str()),
+            0, 0, NULL, 
+            amqp_cstring_bytes(message.c_str()));
+            
+        if (result != AMQP_STATUS_OK) {
+            log(ERROR, "Failed to publish message to queue: " + queueName);
+        } else {
+            log(INFO, "Successfully published message to queue: " + queueName);
+        }
     }
 
 public:
+    // SynchronizerRabbitMQ(const std::string &host, int p, int id) : hostname(host), port(p), channel(1), synchID(id)
+    SynchronizerRabbitMQ(const std::string &host, int p, int id) : hostname("rabbitmq"), port(p), channel(1), synchID(id)
+    {
+        setupRabbitMQ();
+        declareQueue("synch" + std::to_string(synchID) + "_users_queue");
+        declareQueue("synch" + std::to_string(synchID) + "_clients_relations_queue");
+        declareQueue("synch" + std::to_string(synchID) + "_timeline_queue");
+        // TODO: add or modify what kind of queues exist in your clusters based on your needs
+
+        // Set up consumers for each queue
+        setupConsumer("synch" + std::to_string(synchID) + "_users_queue");
+        setupConsumer("synch" + std::to_string(synchID) + "_clients_relations_queue");
+        setupConsumer("synch" + std::to_string(synchID) + "_timeline_queue");
+    }
+
+    ~SynchronizerRabbitMQ() {
+        // Cleanup connections when object is destroyed
+        amqp_channel_close(conn, channel, AMQP_REPLY_SUCCESS);
+        amqp_connection_close(conn, AMQP_REPLY_SUCCESS);
+        amqp_destroy_connection(conn);
+    }
+
+
     std::pair<std::string, std::string> consumeMessage(int timeout_ms = 5000)
     {
         amqp_envelope_t envelope;
@@ -129,38 +180,26 @@ public:
 
         amqp_rpc_reply_t res = amqp_consume_message(conn, &envelope, &timeout, 0);
 
-        if (res.reply_type != AMQP_RESPONSE_NORMAL)
-        {
-            return {"", ""}; // Return empty message and routing key on failure
+        if (res.reply_type != AMQP_RESPONSE_NORMAL) {
+            // Check for specific timeout error
+            if (res.reply_type == AMQP_RESPONSE_LIBRARY_EXCEPTION &&
+                res.library_error == AMQP_STATUS_TIMEOUT) {
+                // This is just a timeout, not a real error
+                return {"", ""};
+            }
+            
+            log(WARNING, "Error consuming message: " + std::to_string(res.reply_type));
+            return {"", ""};
         }
 
         std::string message(static_cast<char *>(envelope.message.body.bytes), envelope.message.body.len);
         std::string routing_key((char *)envelope.routing_key.bytes, envelope.routing_key.len);
+        
+        // Acknowledge the message (important!)
+        amqp_basic_ack(conn, channel, envelope.delivery_tag, 0);
+        
         amqp_destroy_envelope(&envelope);
         return {message, routing_key};
-    }
-    
-    // SynchronizerRabbitMQ(const std::string &host, int p, int id) : hostname(host), port(p), channel(1), synchID(id)
-    SynchronizerRabbitMQ(const std::string &host, int p, int id) : hostname("rabbitmq"), port(p), channel(1), synchID(id)
-    {
-        setupRabbitMQ();
-        declareQueue("synch" + std::to_string(synchID) + "_users_queue");
-        declareQueue("synch" + std::to_string(synchID) + "_clients_relations_queue");
-        declareQueue("synch" + std::to_string(synchID) + "_timeline_queue");
-        // TODO: add or modify what kind of queues exist in your clusters based on your needs
-
-        std::string queueName = "synch" + std::to_string(synchID) + "_users_queue";
-        amqp_basic_consume(conn, channel, amqp_cstring_bytes(queueName.c_str()),
-                           amqp_empty_bytes, 0, 0, 0, amqp_empty_table);
-
-        queueName = "synch" + std::to_string(synchID) + "_clients_relations_queue";
-        amqp_basic_consume(conn, channel, amqp_cstring_bytes(queueName.c_str()),
-                           amqp_empty_bytes, 0, 0, 0, amqp_empty_table);
-
-        queueName = "synch" + std::to_string(synchID) + "_timeline_queue";
-        amqp_basic_consume(conn, channel, amqp_cstring_bytes(queueName.c_str()),
-                           amqp_empty_bytes, 0, 0, 0, amqp_empty_table);
-        
     }
 
     void publishUserList()
@@ -199,7 +238,7 @@ public:
         }
     }
 
-    void consumeUserLists(const std::string& message)
+    void consumeUserLists(const std::string &message)
     {
         std::vector<std::string> allUsers;
 
@@ -272,7 +311,7 @@ public:
         }
     }
 
-    void consumeClientRelations(const std::string& message)
+    void consumeClientRelations(const std::string &message)
     {
         std::vector<std::string> allUsers = get_all_users_func(synchID);
 
@@ -400,7 +439,7 @@ public:
     }
 
     // For each client in your cluster, consume messages from your timeline queue and modify your client's timeline files based on what the users they follow posted to their timeline
-    void consumeTimelines(const std::string& message)
+    void consumeTimelines(const std::string &message)
     {
         log(INFO, "Received timeline update ");
         log(INFO, "Message: " + message);
@@ -548,7 +587,8 @@ void RunServer(std::string coordIP, std::string coordPort, std::string port_no, 
                     log(WARNING, "Received message with unknown routing key: " + routingKey);
                 }
             }
-            std::this_thread::sleep_for(std::chrono::seconds(5));
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
             // you can modify this sleep period as per your choice
         } });
 
@@ -703,14 +743,16 @@ std::vector<std::string> get_lines_from_file(std::string filename)
     std::string user;
     std::ifstream file(filename); // Open the file directly in the constructor
 
-    if (!file.is_open()) {
+    if (!file.is_open())
+    {
         std::cerr << "Error opening file: " << filename << std::endl;
         return users; // Return empty vector if file can't be opened
     }
 
     while (getline(file, user))
     {
-        if (!user.empty()) { // Only add non-empty lines
+        if (!user.empty())
+        { // Only add non-empty lines
             users.push_back(user);
         }
     }
@@ -768,10 +810,10 @@ bool file_contains_user(std::string filename, std::string user)
 
     for (int i = 0; i < users.size(); i++)
     {
-        std::cout<<"Checking if "<<user<<" = "<<users[i]<<std::endl;
+        std::cout << "Checking if " << user << " = " << users[i] << std::endl;
         if (user == users[i])
         {
-            std::cout<<"found"<<std::endl;
+            std::cout << "found" << std::endl;
             return true;
         }
     }
