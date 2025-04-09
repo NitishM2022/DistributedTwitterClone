@@ -411,8 +411,7 @@ std::vector<Message> getLastNPosts(const std::string &u, int n)
   {
     if (lines[i].substr(0, 2) != "T " ||
         lines[i + 1].substr(0, 2) != "U " ||
-        lines[i + 2].substr(0, 2) != "W " ||
-        !lines[i + 3].empty())
+        lines[i + 2].substr(0, 2) != "W " ||)
     {
       continue;
     }
@@ -458,6 +457,7 @@ void appendTo(const std::string &filename, const std::string &timestamp_str, con
     outfile << "T " << timestamp_str << "\n";
     outfile << "U " << username << "\n";
     outfile << "W " << message << "\n";
+    outfile << "\n";
     outfile.close();
   }
   else

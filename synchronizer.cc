@@ -377,6 +377,7 @@ public:
                 log(INFO, "No timeline to publish for client " + client);
                 continue;
             }
+            log(INFO, "Timeline for client " + client + " is " + std::to_string(timeline.size()) + " lines long");
 
             Json::Value timeline_json;
             timeline_json[client] = Json::arrayValue;
