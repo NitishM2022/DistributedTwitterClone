@@ -539,17 +539,20 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
       sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
       
       sem_wait(fileSem);
-      std::ifstream readUserStream(usersFile);
+      
+      // Read all existing users from file into sets
       std::unordered_set<std::string> users;
-      //file to db
+      std::ifstream readUserStream(usersFile);
       if (readUserStream.is_open()) {
         std::string user;
         while (readUserStream >> user) {
+          users.insert(user);
+          // Add users from file to client_db if they don't exist
           if (client_db.find(user) == client_db.end()) {
-            users.insert(user);
             Client *new_client = new Client();
             new_client->username = user;
             client_db[new_client->username] = new_client;
+            log(INFO, "Added user " + user + " from file to client_db");
           }
         }
         readUserStream.close();
@@ -557,17 +560,34 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
         log(ERROR, "Error opening user file: " + usersFile);
       }
 
-      // db to file
-      std::ofstream writeUserStream(usersFile, std::ios::app | std::ios::out | std::ios::in);
-      for (const auto &client : client_db)
-      {
-        if (users.find(client.first) == users.end())
-        {
-          writeUserStream << client.first << std::endl;
-          log(INFO, "Client " + client.first + " added to all_users file");
+      // Check for users in client_db that are not in the file
+      std::unordered_set<std::string> users_to_add;
+      for (const auto &client : client_db) {
+        if (users.find(client.first) == users.end()) {
+          users_to_add.insert(client.first);
         }
       }
-      writeUserStream.close();
+
+      // Rewrite file if necessary to add new users
+      if (!users_to_add.empty()) {
+        // Open file in truncate mode to rewrite completely
+        std::ofstream writeUserStream(usersFile);
+        if (writeUserStream.is_open()) {
+          // Write all existing users first
+          for (const auto &user : users) {
+            writeUserStream << user << std::endl;
+          }
+          // Then add new users
+          for (const auto &user : users_to_add) {
+            writeUserStream << user << std::endl;
+            log(INFO, "Client " + user + " added to all_users file");
+          }
+          writeUserStream.close();
+        } else {
+          log(ERROR, "Error opening user file for writing: " + usersFile);
+        }
+      }
+      
       sem_post(fileSem);
       sem_close(fileSem);
 
@@ -578,32 +598,50 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
           std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + client.first + "_follow_list.txt";
           fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
           sem_wait(fileSem);
-          std::ifstream readFollowingStream(file, std::ios::in);
+          
+          // Read existing follow list
           std::unordered_set<std::string> follows;
-          if (readFollowingStream.is_open())
-          {
+          std::ifstream readFollowingStream(file, std::ios::in);
+          if (readFollowingStream.is_open()) {
             log(INFO, "Follow List file opened successfully for " + client.first);
             std::string following;
-            while (readFollowingStream >> following)
-            {
+            while (readFollowingStream >> following) {
               follows.insert(following);
               if(client.second->client_following.find(following) == client.second->client_following.end()){
                 client.second->client_following.insert(following);
               }
             }
             readFollowingStream.close();
-          }else{
+          } else {
             log(ERROR, "Error opening following file: " + file);
           }
 
-          // write to the file
-          std::ofstream writeFollowingStream(file, std::ios::app | std::ios::out | std::ios::in);
-          for(const auto &follow : client.second->client_following){
-            if(follows.find(follow) == follows.end()){
-              writeFollowingStream << follow << std::endl;
+          // Check for new follows in memory that aren't in file
+          std::unordered_set<std::string> follows_to_add;
+          for (const auto &follow : client.second->client_following) {
+            if (follows.find(follow) == follows.end()) {
+              follows_to_add.insert(follow);
             }
           }
-          writeFollowingStream.close();
+
+          // Only rewrite file if there are new follows to add
+          if (!follows_to_add.empty()) {
+            std::ofstream writeFollowingStream(file);
+            if (writeFollowingStream.is_open()) {
+              // Write all existing follows
+              for (const auto &follow : follows) {
+                writeFollowingStream << follow << std::endl;
+              }
+              // Add new follows
+              for (const auto &follow : follows_to_add) {
+                writeFollowingStream << follow << std::endl;
+                log(INFO, "Added " + follow + " to " + client.first + "'s follow list file");
+              }
+              writeFollowingStream.close();
+            } else {
+              log(ERROR, "Error opening follow list file for writing: " + file);
+            }
+          }
           
           sem_post(fileSem);
           sem_close(fileSem);
@@ -611,41 +649,66 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
       }
 
       // follower file
-      // update client db and write to the file
-      for(const auto &client : client_db)
-      {
+      for(const auto &client : client_db) {
         Client *c1 = client.second;
         std::string file = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + client.first + "_followers.txt";
         semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + client.first + "_followers.txt";
         fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
 
         sem_wait(fileSem);
+        
+        // Read existing followers
+        std::unordered_set<std::string> followers;
         std::ifstream followerStream(file, std::ios::in);
-        if (followerStream.is_open())
-        {
-          log(INFO, "Follower file opened successfully.");
-          // read the file and update the client db
+        if (followerStream.is_open()) {
+          log(INFO, "Follower file opened successfully for " + client.first);
           std::string follower;
-          while (followerStream >> follower)
-          {
-            if (c1->client_followers.find(follower) == c1->client_followers.end())
-            {
+          while (followerStream >> follower) {
+            followers.insert(follower);
+            if (c1->client_followers.find(follower) == c1->client_followers.end()) {
               c1->client_followers.insert(follower);
             }
           }
           followerStream.close();
-        }else{
+        } else {
           log(ERROR, "Error opening follower file: " + file);
           sem_post(fileSem);
           sem_close(fileSem);
           continue;
         }
 
+        // Check for new followers in memory that aren't in file
+        std::unordered_set<std::string> followers_to_add;
+        for (const auto &follower : c1->client_followers) {
+          if (followers.find(follower) == followers.end()) {
+            followers_to_add.insert(follower);
+          }
+        }
+
+        // Only rewrite file if there are new followers to add
+        if (!followers_to_add.empty()) {
+          std::ofstream writeFollowerStream(file);
+          if (writeFollowerStream.is_open()) {
+            // Write all existing followers
+            for (const auto &follower : followers) {
+              writeFollowerStream << follower << std::endl;
+            }
+            // Add new followers
+            for (const auto &follower : followers_to_add) {
+              writeFollowerStream << follower << std::endl;
+              log(INFO, "Added " + follower + " to " + client.first + "'s followers file");
+            }
+            writeFollowerStream.close();
+          } else {
+            log(ERROR, "Error opening followers file for writing: " + file);
+          }
+        }
+        
         sem_post(fileSem);
         sem_close(fileSem);
       }
-      db_mutex.unlock();
       
+      db_mutex.unlock();
     } });
 
   server->Wait();

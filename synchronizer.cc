@@ -475,12 +475,12 @@ private:
         sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
 
         sem_wait(fileSem);
-        std::unordered_set<std::string> newUsers; // !file_contains_user does not really work
+        std::vector<std::string> newUsers;
         for (std::string user : users)
         {
             if (!file_contains_user(usersFile, user))
             {
-                newUsers.insert(user);
+                newUsers.push_back(user);
             }
         }
 
@@ -802,18 +802,6 @@ std::vector<std::string> get_all_users_func(int synchID)
     std::vector<std::string> slave_user_list = get_lines_from_file(slave_users_file);
     sem_post(fileSemSlave);
     sem_close(fileSemSlave);
-
-    // Make sure no duplicates
-    std::unordered_set<std::string> unique_users(master_user_list.begin(), master_user_list.end());
-    master_user_list.assign(unique_users.begin(), unique_users.end());
-    unique_users.clear();
-
-    unique_users.insert(slave_user_list.begin(), slave_user_list.end());
-    slave_user_list.assign(unique_users.begin(), unique_users.end());
-    unique_users.clear();
-
-    log(INFO, "Master user list size: " + std::to_string(master_user_list.size()));
-    log(INFO, "Slave user list size: " + std::to_string(slave_user_list.size()));
 
     if (master_user_list.size() >= slave_user_list.size())
         return master_user_list;
