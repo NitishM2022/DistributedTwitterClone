@@ -117,7 +117,7 @@ private:
                            0, 0, NULL, amqp_cstring_bytes(message.c_str()));
     }
 
-    std::string consumeMessage(const std::string &queueName)
+    std::string consumeMessage(const std::string &queueName, int timeout_ms = 5000)
     {
         amqp_rpc_reply_t get_result;
         std::string message = "";
