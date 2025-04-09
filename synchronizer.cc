@@ -194,10 +194,7 @@ public:
 
         std::string message(static_cast<char *>(envelope.message.body.bytes), envelope.message.body.len);
         std::string routing_key((char *)envelope.routing_key.bytes, envelope.routing_key.len);
-        
-        // Acknowledge the message (important!)
-        amqp_basic_ack(conn, channel, envelope.delivery_tag, 0);
-        
+                
         amqp_destroy_envelope(&envelope);
         return {message, routing_key};
     }
@@ -228,7 +225,7 @@ public:
             for (int i = 1; i <= total_number_of_registered_synchronizers; i++)
             {
                 std::string queueName = "synch" + std::to_string(i) + "_users_queue";
-                publishMessage("synch" + std::to_string(synchID) + "_users_queue", message);
+                publishMessage(queueName, message);
                 log(INFO, "Published user list to " + queueName);
             }
         }
