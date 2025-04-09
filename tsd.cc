@@ -309,8 +309,14 @@ class SNSServiceImpl final : public SNSService::Service
       if (curr != nullptr)
       {
         db_mutex.lock();
-        log(INFO, "Writing message to client's followers") for (auto &f : curr->client_following)
+        log(INFO, "Writing message to client's followers");
+        for (auto &f : curr->client_followers)
         {
+          if (getClusterID(f) != clusterID)
+          {
+            log(INFO, "Client " + u + " is not in the same cluster as follower " + f);
+            continue;
+          }
           log(INFO, "Writing message to client " + u + "'s followers " + f + " following file");
           std::string followingFile = "./cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + f + "_following.txt";
           std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + f + "_following.txt";

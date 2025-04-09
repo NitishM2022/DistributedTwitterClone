@@ -376,7 +376,9 @@ public:
                 continue;
             }
 
+            // looks at follow list of clients in your cluster and sees it clientId is in there
             std::vector<std::string> followers = getFollowersOfUser(clientId);
+            log(INFO, "For timeline Client " + client + " has " + std::to_string(followers.size()) + " followers");
 
             for (const auto &follower : followers)
             {
@@ -798,9 +800,7 @@ bool file_contains_user(std::string filename, std::string user)
     std::vector<std::string> users;
     // check username is valid
 
-    log(INFO, "Checking if user " + user + " exists in file " + filename);
     users = get_lines_from_file(filename);
-    log(INFO, "Number of users in file: " + std::to_string(users.size()));
 
     for (int i = 0; i < users.size(); i++)
     {
@@ -811,7 +811,6 @@ bool file_contains_user(std::string filename, std::string user)
             return true;
         }
     }
-    log(INFO, "User " + user + " not found in file " + filename);
     return false;
 }
 
