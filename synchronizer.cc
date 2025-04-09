@@ -558,13 +558,13 @@ void RunServer(std::string coordIP, std::string coordPort, std::string port_no, 
     std::thread t1(run_synchronizer, coordIP, coordPort, port_no, synchID, std::ref(rabbitMQ));
 
     // Create a consumer thread
-    std::thread consumerThread([&rabbitMQ]()
+    std::thread consumerThread([&rabbitMQ, synchID]()
                                {
 
         // Set up consumers for each queue
-        setupConsumer("synch" + std::to_string(synchID) + "_users_queue");
-        setupConsumer("synch" + std::to_string(synchID) + "_clients_relations_queue");
-        setupConsumer("synch" + std::to_string(synchID) + "_timeline_queue");
+        rabbitMQ.setupConsumer("synch" + std::to_string(synchID) + "_users_queue");
+        rabbitMQ.setupConsumer("synch" + std::to_string(synchID) + "_clients_relations_queue");
+        rabbitMQ.setupConsumer("synch" + std::to_string(synchID) + "_timeline_queue");
 
         while (true) {
             std::pair<std::string, std::string> msg_pair = rabbitMQ.consumeMessage(5000);
