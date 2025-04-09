@@ -257,6 +257,10 @@ public:
 
         for (int i = 1; i <= total_number_of_registered_synchronizers; i++)
         {
+            if(followerServers.serverid(i) == synchID)
+            {
+                continue;
+            }
             std::string queueName = "synch" + std::to_string(i) + "_clients_relations_queue";
             Json::FastWriter writer;
             std::string message = writer.write(relations);
