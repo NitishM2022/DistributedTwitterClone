@@ -96,31 +96,35 @@ private:
     int port;
     int synchID;
 
-    void setupRabbitMQ() {
+    void setupRabbitMQ()
+    {
         conn = amqp_new_connection();
         amqp_socket_t *socket = amqp_tcp_socket_new(conn);
-        if (!socket) {
+        if (!socket)
+        {
             log(ERROR, "Failed to create TCP socket");
             exit(1);
         }
         int status = amqp_socket_open(socket, hostname.c_str(), port);
-        if (status != AMQP_STATUS_OK) {
+        if (status != AMQP_STATUS_OK)
+        {
             log(ERROR, "Failed to open TCP socket: " + std::to_string(status));
             exit(1);
         }
         amqp_rpc_reply_t loginReply = amqp_login(conn, "/", 0, 131072, 0, AMQP_SASL_METHOD_PLAIN, "guest", "guest");
-        if (loginReply.reply_type != AMQP_RESPONSE_NORMAL) {
+        if (loginReply.reply_type != AMQP_RESPONSE_NORMAL)
+        {
             log(ERROR, "Login failed");
             exit(1);
         }
         amqp_channel_open(conn, channel);
         amqp_rpc_reply_t channelReply = amqp_get_rpc_reply(conn);
-        if (channelReply.reply_type != AMQP_RESPONSE_NORMAL) {
+        if (channelReply.reply_type != AMQP_RESPONSE_NORMAL)
+        {
             log(ERROR, "Channel open failed");
             exit(1);
         }
     }
-
 
     void declareQueue(const std::string &queueName)
     {
@@ -131,15 +135,18 @@ private:
     void publishMessage(const std::string &queueName, const std::string &message)
     {
         int result = amqp_basic_publish(
-            conn, channel, 
-            amqp_empty_bytes, 
+            conn, channel,
+            amqp_empty_bytes,
             amqp_cstring_bytes(queueName.c_str()),
-            0, 0, NULL, 
+            0, 0, NULL,
             amqp_cstring_bytes(message.c_str()));
-            
-        if (result != AMQP_STATUS_OK) {
+
+        if (result != AMQP_STATUS_OK)
+        {
             log(ERROR, "Failed to publish message to queue: " + queueName);
-        } else {
+        }
+        else
+        {
             log(INFO, "Successfully published message to queue: " + queueName);
         }
     }
@@ -155,7 +162,8 @@ public:
         // TODO: add or modify what kind of queues exist in your clusters based on your needs
     }
 
-    ~SynchronizerRabbitMQ() {
+    ~SynchronizerRabbitMQ()
+    {
         // Cleanup connections when object is destroyed
         amqp_channel_close(conn, channel, AMQP_REPLY_SUCCESS);
         amqp_connection_close(conn, AMQP_REPLY_SUCCESS);
@@ -180,8 +188,8 @@ public:
         }
     }
 
-
-    std::pair<std::string, std::string> consumeMessage() {
+    std::pair<std::string, std::string> consumeMessage()
+    {
         amqp_envelope_t envelope;
         amqp_maybe_release_buffers(conn);
 
@@ -190,7 +198,8 @@ public:
 
         // In case of an error that is not a normal reply, log it.
         // (In a production system, consider adding error-handling/retry logic.)
-        while (res.reply_type != AMQP_RESPONSE_NORMAL) {
+        while (res.reply_type != AMQP_RESPONSE_NORMAL)
+        {
             log(WARNING, "Error consuming message: " + std::to_string(res.reply_type) + ". Retrying...");
             res = amqp_consume_message(conn, &envelope, nullptr, 0);
         }
@@ -201,7 +210,6 @@ public:
         amqp_destroy_envelope(&envelope);
         return {message, routing_key};
     }
-
 
     void publishUserList()
     {
@@ -225,9 +233,14 @@ public:
         if (status.ok())
         {
             total_number_of_registered_synchronizers = followerServers.serverid_size();
+            log(INFO, "Synchronizer " + std::to_string(synchID) + " sees " + std::to_string(total_number_of_registered_synchronizers) + " synchronizers");
 
             for (int i = 1; i <= total_number_of_registered_synchronizers; i++)
             {
+                if (followerServers.serverid(i - 1) == synchID)
+                {
+                    continue;
+                }
                 std::string queueName = "synch" + std::to_string(i) + "_users_queue";
                 publishMessage(queueName, message);
                 log(INFO, "Published user list to " + queueName);
@@ -304,6 +317,10 @@ public:
 
         for (int i = 1; i <= total_number_of_registered_synchronizers; i++)
         {
+            if (followerServers.serverid(i - 1) == synchID)
+            {
+                continue;
+            }
             std::string queueName = "synch" + std::to_string(i) + "_clients_relations_queue";
             Json::FastWriter writer;
             std::string message = writer.write(relations);
@@ -598,7 +615,7 @@ void RunServer(std::string coordIP, std::string coordPort, std::string port_no, 
                 } else {
                     log(WARNING, "Received message with unknown routing key: " + routingKey);
                 }
-                std::this_thread::sleep_for(std::chrono::seconds(5));
+                std::this_thread::sleep_for(std::chrono::seconds(1));
             }
         } });
 
