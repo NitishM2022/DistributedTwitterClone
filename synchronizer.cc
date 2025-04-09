@@ -117,6 +117,7 @@ private:
                            0, 0, NULL, amqp_cstring_bytes(message.c_str()));
     }
 
+public:
     std::pair<std::string, std::string> consumeMessage(int timeout_ms = 5000)
     {
         amqp_envelope_t envelope;
@@ -138,8 +139,7 @@ private:
         amqp_destroy_envelope(&envelope);
         return {message, routing_key};
     }
-
-public:
+    
     // SynchronizerRabbitMQ(const std::string &host, int p, int id) : hostname(host), port(p), channel(1), synchID(id)
     SynchronizerRabbitMQ(const std::string &host, int p, int id) : hostname("rabbitmq"), port(p), channel(1), synchID(id)
     {
