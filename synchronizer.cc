@@ -757,14 +757,14 @@ std::vector<std::string> get_all_users_func(int synchID)
     std::string semNameMaster = "/" + clusterID + "_1_all_users.txt";
     sem_t *fileSemMaster = sem_open(semNameMaster.c_str(), O_CREAT, 0666, 1);
     sem_wait(fileSemMaster);
-    std::vector<std::string> master_user_list = get_lines_from_file(master_users_file, "1");
+    std::vector<std::string> master_user_list = get_lines_from_file(master_users_file);
     sem_post(fileSemMaster);
     sem_close(fileSemMaster);
 
     std::string semNameSlave = "/" + clusterID + "_2_all_users.txt";
     sem_t *fileSemSlave = sem_open(semNameSlave.c_str(), O_CREAT, 0666, 1);
     sem_wait(fileSemSlave);
-    std::vector<std::string> slave_user_list = get_lines_from_file(slave_users_file, "2");
+    std::vector<std::string> slave_user_list = get_lines_from_file(slave_users_file);
     sem_post(fileSemSlave);
     sem_close(fileSemSlave);
 
