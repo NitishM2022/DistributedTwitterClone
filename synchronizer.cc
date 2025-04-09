@@ -381,7 +381,8 @@ public:
 
             Json::Value timeline_json;
             timeline_json[client] = Json::arrayValue;
-            for (size_t i = 0; i < timeline.size(); i += 4)
+            // changed to 3 since get_tl_or_fl removes empty lines
+            for (size_t i = 0; i < timeline.size(); i += 3)
             {
                 if (timeline[i].substr(0, 2) != "T ")
                     continue;

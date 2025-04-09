@@ -405,9 +405,9 @@ std::vector<Message> getLastNPosts(const std::string &u, int n)
   ffl_mutex.unlock();
 
   if (n != -1)
-    start = std::max(start, static_cast<int>(lines.size()) - (n * 3));
+    start = std::max(start, static_cast<int>(lines.size()) - (n * 4));
 
-  for (int i = start; i <= lines.size() - 3; i += 3)
+  for (int i = start; i <= lines.size() - 4; i += 4)
   {
     if (lines[i].substr(0, 2) != "T " ||
         lines[i + 1].substr(0, 2) != "U " ||
@@ -457,6 +457,7 @@ void appendTo(const std::string &filename, const std::string &timestamp_str, con
     outfile << "T " << timestamp_str << "\n";
     outfile << "U " << username << "\n";
     outfile << "W " << message << "\n";
+    outfile << "\n";
     outfile.close();
   }
   else
