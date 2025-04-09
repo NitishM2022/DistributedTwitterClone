@@ -117,27 +117,23 @@ private:
                            0, 0, NULL, amqp_cstring_bytes(message.c_str()));
     }
 
-    std::string consumeMessage(const std::string &queueName, int timeout_ms = 5000)
+    std::string consumeMessage(const std::string &queueName)
     {
-        amqp_basic_consume(conn, channel, amqp_cstring_bytes(queueName.c_str()),
-                           amqp_empty_bytes, 0, 1, 0, amqp_empty_table);
+        amqp_rpc_reply_t get_result;
+        std::string message = "";
+        amqp_message_t amqp_message;
 
-        amqp_envelope_t envelope;
-        amqp_maybe_release_buffers(conn);
+        get_result = amqp_basic_get(conn, channel, amqp_cstring_bytes(queueName.c_str()), 1); // no_ack = 1 for simplicity
 
-        struct timeval timeout;
-        timeout.tv_sec = timeout_ms / 1000;
-        timeout.tv_usec = (timeout_ms % 1000) * 1000;
-
-        amqp_rpc_reply_t res = amqp_consume_message(conn, &envelope, &timeout, 0);
-
-        if (res.reply_type != AMQP_RESPONSE_NORMAL)
+        if (get_result.reply_type == AMQP_RESPONSE_NORMAL)
         {
-            return "";
+            amqp_rpc_reply_t read_result = amqp_read_message(conn, channel, &amqp_message, 0);
+            if (read_result.reply_type == AMQP_RESPONSE_NORMAL)
+            {
+                message.assign(static_cast<char *>(amqp_message.body.bytes), amqp_message.body.len);
+                amqp_destroy_message(&amqp_message);
+            }
         }
-
-        std::string message(static_cast<char *>(envelope.message.body.bytes), envelope.message.body.len);
-        amqp_destroy_envelope(&envelope);
         return message;
     }
 
@@ -749,14 +745,14 @@ bool file_contains_user(std::string filename, std::string user)
     users = get_lines_from_file(filename);
     for (int i = 0; i < users.size(); i++)
     {
-        std::cout<<"Checking if "<<user<<" = "<<users[i]<<std::endl;
+        std::cout << "Checking if " << user << " = " << users[i] << std::endl;
         if (user == users[i])
         {
-            std::cout<<"found"<<std::endl;
+            std::cout << "found" << std::endl;
             return true;
         }
     }
-    std::cout<<"not found"<<std::endl;
+    std::cout << "not found" << std::endl;
     return false;
 }
 

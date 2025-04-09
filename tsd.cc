@@ -306,16 +306,16 @@ class SNSServiceImpl final : public SNSService::Service
       std::string time_str = ss.str();
 
       // have to do this withouth synchrnoizer
-      if (curr != nullptr){
+      if (curr != nullptr)
+      {
         db_mutex.lock();
-        log(INFO, "Writing message to client's followers")
-        for (auto &f : curr->client_following)
+        log(INFO, "Writing message to client's followers") for (auto &f : curr->client_following)
         {
           log(INFO, "Writing message to client " + u + "'s followers " + f + " following file");
           std::string followingFile = "./cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + f + "_following.txt";
           std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + f + "_following.txt";
           sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
-          
+
           sem_wait(fileSem);
           appendTo(followingFile, time_str, u, m.msg());
           sem_post(fileSem);
@@ -323,7 +323,9 @@ class SNSServiceImpl final : public SNSService::Service
           log(INFO, "Wrote message to client " + u + "'s followers " + f + " following file");
         }
         db_mutex.unlock();
-      }else{
+      }
+      else
+      {
         log(ERROR, "Client not found: " + u);
       }
 
