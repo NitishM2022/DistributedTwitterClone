@@ -86,7 +86,7 @@ std::vector<std::string> get_lines_from_file(std::string, std::string);
 std::vector<std::string> get_all_users_func(int);
 std::vector<std::string> get_tl_or_fl(int, int, bool);
 std::vector<std::string> getFollowersOfUser(int);
-bool file_contains_user(std::string filename, std::string user);
+std::vector<std::string> getMyFollowers(int) bool file_contains_user(std::string filename, std::string user);
 
 void Heartbeat(std::string coordinatorIp, std::string coordinatorPort, ServerInfo serverInfo, int syncID);
 
@@ -304,7 +304,7 @@ public:
         {
             if (server_ids[i - 1] == synchID)
                 continue;
-            
+
             std::string queueName = "synch" + std::to_string(i) + "_clients_relations_queue";
             Json::FastWriter writer;
             std::string message = writer.write(relations);
@@ -366,6 +366,7 @@ public:
             int clientId = std::stoi(client);
             int client_cluster = ((clientId - 1) % 3) + 1;
             // only do this for clients in your own cluster
+            // client_cluster has the same clusterID as me
             if (client_cluster != clusterID)
                 continue;
 
@@ -376,8 +377,29 @@ public:
                 continue;
             }
 
-            // looks at follow list of clients in your cluster and sees it clientId is in there
-            std::vector<std::string> followers = getFollowersOfUser(clientId);
+            Json::Value timeline_json;
+            timeline_json[client] = Json::arrayValue;
+            for (size_t i = 0; i < timeline.size(); i += 4)
+            {
+                if (timeline[i].substr(0, 2) != "T ")
+                    continue;
+
+                std::string timestamp = timeline[i].substr(2);
+                std::string username = timeline[i + 1].substr(2);
+                std::string message = timeline[i + 2].substr(2);
+                log(INFO, "Adding post to timeline JSON: " + timestamp + ", " + username + ", " + message);
+
+                Json::Value post;
+                post["timestamp"] = timestamp;
+                post["username"] = username;
+                post["message"] = message;
+                timeline_json[client].append(post);
+            }
+            Json::FastWriter writer;
+            std::string message = writer.write(timeline_json);
+
+            // looks at my follower.txt file
+            std::vector<std::string> followers = getMyFollowers(clientId);
             log(INFO, "For timeline Client " + client + " has " + std::to_string(followers.size()) + " followers");
 
             for (const auto &follower : followers)
@@ -385,43 +407,21 @@ public:
                 // send the timeline updates of your current user to all its followers
 
                 // YOUR CODE HERE
-                Json::Value timeline_json;
-                timeline_json[client] = Json::arrayValue;
-                for (size_t i = 0; i < timeline.size(); i += 4)
-                {
-                    if (timeline[i].substr(0, 2) != "T ")
-                        continue;
-
-                    std::string timestamp = timeline[i].substr(2);
-                    std::string username = timeline[i + 1].substr(2);
-                    std::string message = timeline[i + 2].substr(2);
-                    log(INFO, "Adding post to timeline JSON: " + timestamp + ", " + username + ", " + message);
-
-                    Json::Value post;
-                    post["timestamp"] = timestamp;
-                    post["username"] = username;
-                    post["message"] = message;
-                    timeline_json[client].append(post);
-                }
-                Json::FastWriter writer;
-                std::string message = writer.write(timeline_json);
-
                 log(INFO, "Attempting to publish to follower " + follower);
                 int followerId = std::stoi(follower);
                 int followerClusterID = ((followerId - 1) % 3) + 1;
 
-                for (int i = 0; i < total_number_of_registered_synchronizers; i++)
+                // Do not send intra cluster updates
+                log(INFO, "Checking cluster " + clusterIDs[i] + " for follower " + follower);
+                if (client_cluster != followerClusterID)
                 {
-                    // Send to the follower's synchronizer,
-                    // Ensure that you are not sending follower updates if they are in the same cluster
-                    // Ensure you are not sending to yourself
-                    log(INFO, "Checking cluster " + clusterIDs[i] + " for follower " + follower);
-                    if (std::stoi(clusterIDs[i]) == followerClusterID && client_cluster != followerClusterID && server_ids[i] != synchID)
-                    {
-                        std::string queueName = "synch" + std::to_string(server_ids[i]) + "_timeline_queue";
-                        publishMessage(queueName, message);
-                        log(INFO, "Published timeline update to " + queueName);
-                    }
+                    std::string queueName = "synch" + std::to_string(followerClusterID) + "_timeline_queue";
+                    publishMessage(queueName, message);
+                    log(INFO, "Published timeline update to " + queueName);
+
+                    queueName = "synch" + std::to_string(followerClusterID * 2) + "_timeline_queue";
+                    publishMessage(queueName, message);
+                    log(INFO, "Published timeline update to " + queueName);
                 }
             }
         }
@@ -906,6 +906,25 @@ std::vector<std::string> getFollowersOfUser(int ID)
         sem_post(fileSem);
         sem_close(fileSem);
     }
+
+    return followers;
+}
+
+std::vector<std::string> getMyFollowers(int ID)
+{
+    std::vector<std::string> followers;
+    std::string clientID = std::to_string(ID);
+
+    std::string file = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + userID + "_followers.txt";
+    std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + userID + "_followers.txt";
+    sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
+
+    sem_wait(fileSem);
+    // std::cout << "Reading file " << file << std::endl;
+    followers = get_lines_from_file(file);
+
+    sem_post(fileSem);
+    sem_close(fileSem);
 
     return followers;
 }
