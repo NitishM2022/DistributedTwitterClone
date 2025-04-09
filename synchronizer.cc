@@ -475,12 +475,12 @@ private:
         sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
 
         sem_wait(fileSem);
-        std::vector<std::string> newUsers;
+        std::unordered_set<std::string> newUsers; // !file_contains_user does not really work
         for (std::string user : users)
         {
             if (!file_contains_user(usersFile, user))
             {
-                newUsers.push_back(user);
+                newUsers.insert(user);
             }
         }
 
