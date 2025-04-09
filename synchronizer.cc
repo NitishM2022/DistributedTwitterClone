@@ -111,24 +111,6 @@ private:
                            0, 0, 0, 0, amqp_empty_table);
     }
 
-    void setupConsumer(const std::string &queueName)
-    {
-        amqp_basic_consume(
-            conn, channel,
-            amqp_cstring_bytes(queueName.c_str()),
-            amqp_empty_bytes, 0, 1, 0, amqp_empty_table);
-
-        amqp_rpc_reply_t reply = amqp_get_rpc_reply(conn);
-        if (reply.reply_type != AMQP_RESPONSE_NORMAL)
-        {
-            log(ERROR, "Failed to set up consumer for queue: " + queueName);
-        }
-        else
-        {
-            log(INFO, "Successfully set up consumer for queue: " + queueName);
-        }
-    }
-
     void publishMessage(const std::string &queueName, const std::string &message)
     {
         int result = amqp_basic_publish(
@@ -154,11 +136,6 @@ public:
         declareQueue("synch" + std::to_string(synchID) + "_clients_relations_queue");
         declareQueue("synch" + std::to_string(synchID) + "_timeline_queue");
         // TODO: add or modify what kind of queues exist in your clusters based on your needs
-
-        // Set up consumers for each queue
-        setupConsumer("synch" + std::to_string(synchID) + "_users_queue");
-        setupConsumer("synch" + std::to_string(synchID) + "_clients_relations_queue");
-        setupConsumer("synch" + std::to_string(synchID) + "_timeline_queue");
     }
 
     ~SynchronizerRabbitMQ() {
@@ -166,6 +143,24 @@ public:
         amqp_channel_close(conn, channel, AMQP_REPLY_SUCCESS);
         amqp_connection_close(conn, AMQP_REPLY_SUCCESS);
         amqp_destroy_connection(conn);
+    }
+
+    void setupConsumer(const std::string &queueName)
+    {
+        amqp_basic_consume(
+            conn, channel,
+            amqp_cstring_bytes(queueName.c_str()),
+            amqp_empty_bytes, 0, 1, 0, amqp_empty_table);
+
+        amqp_rpc_reply_t reply = amqp_get_rpc_reply(conn);
+        if (reply.reply_type != AMQP_RESPONSE_NORMAL)
+        {
+            log(ERROR, "Failed to set up consumer for queue: " + queueName);
+        }
+        else
+        {
+            log(INFO, "Successfully set up consumer for queue: " + queueName);
+        }
     }
 
 
@@ -565,8 +560,16 @@ void RunServer(std::string coordIP, std::string coordPort, std::string port_no, 
     // Create a consumer thread
     std::thread consumerThread([&rabbitMQ]()
                                {
+
+        // Set up consumers for each queue
+        setupConsumer("synch" + std::to_string(synchID) + "_users_queue");
+        setupConsumer("synch" + std::to_string(synchID) + "_clients_relations_queue");
+        setupConsumer("synch" + std::to_string(synchID) + "_timeline_queue");
+
         while (true) {
-            std::pair<std::string, std::string> msg_pair = rabbitMQ.consumeMessage(1000);
+            std::pair<std::string, std::string> msg_pair = rabbitMQ.consumeMessage(5000);
+            log(INFO, "Received message from RabbitMQ :\"D");
+            log(INFO, "Message: " + msg_pair.first);
 
             if (!msg_pair.first.empty()) {
                 const std::string& message = msg_pair.first;
@@ -584,8 +587,6 @@ void RunServer(std::string coordIP, std::string coordPort, std::string port_no, 
                     log(WARNING, "Received message with unknown routing key: " + routingKey);
                 }
             }
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-            // you can modify this sleep period as per your choice
         } });
 
     server->Wait();
