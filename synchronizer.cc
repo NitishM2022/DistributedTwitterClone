@@ -803,6 +803,18 @@ std::vector<std::string> get_all_users_func(int synchID)
     sem_post(fileSemSlave);
     sem_close(fileSemSlave);
 
+    // Make sure no duplicates
+    std::unordered_set<std::string> unique_users(master_user_list.begin(), master_user_list.end());
+    master_user_list.assign(unique_users.begin(), unique_users.end());
+    unique_users.clear();
+
+    unique_users.insert(slave_user_list.begin(), slave_user_list.end());
+    slave_user_list.assign(unique_users.begin(), unique_users.end());
+    unique_users.clear();
+
+    log(INFO, "Master user list size: " + std::to_string(master_user_list.size()));
+    log(INFO, "Slave user list size: " + std::to_string(slave_user_list.size()));
+
     if (master_user_list.size() >= slave_user_list.size())
         return master_user_list;
     else
