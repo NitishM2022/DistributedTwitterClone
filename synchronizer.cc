@@ -751,14 +751,14 @@ bool file_contains_user(std::string filename, std::string user)
     users = get_lines_from_file(filename);
     for (int i = 0; i < users.size(); i++)
     {
-        // std::cout<<"Checking if "<<user<<" = "<<users[i]<<std::endl;
+        std::cout<<"Checking if "<<user<<" = "<<users[i]<<std::endl;
         if (user == users[i])
         {
-            // std::cout<<"found"<<std::endl;
+            std::cout<<"found"<<std::endl;
             return true;
         }
     }
-    // std::cout<<"not found"<<std::endl;
+    std::cout<<"not found"<<std::endl;
     return false;
 }
 
