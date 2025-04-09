@@ -77,6 +77,10 @@ std::string clusterSubdirectory = "2"; // default to slave
 std::vector<std::string> otherHosts;
 std::unordered_map<std::string, int> timelineLengths;
 
+// server list
+std::vector<int> server_ids;
+std::vector<std::string> hosts, ports, type, clusterIDs, isMasters;
+
 std::vector<std::string> get_lines_from_file(std::string, std::string);
 std::vector<std::string> get_all_users_func(int);
 std::vector<std::string> get_tl_or_fl(int, int, bool);
@@ -214,6 +218,12 @@ public:
     void publishUserList()
     {
         std::vector<std::string> users = get_all_users_func(synchID);
+        if (users.empty())
+        {
+            log(INFO, "No users to publish");
+            return;
+        }
+
         std::sort(users.begin(), users.end());
         Json::Value userList;
         for (const auto &user : users)
@@ -223,32 +233,14 @@ public:
         Json::FastWriter writer;
         std::string message = writer.write(userList);
 
-        grpc::ClientContext context;
-        csce438::ServerList followerServers;
-        csce438::ID id;
-        id.set_id(synchID);
-
-        grpc::Status status = coordinator_stub_->GetAllFollowerServers(&context, id, &followerServers);
-
-        if (status.ok())
+        for (int i = 1; i <= total_number_of_registered_synchronizers; i++)
         {
-            total_number_of_registered_synchronizers = followerServers.serverid_size();
-            log(INFO, "Synchronizer " + std::to_string(synchID) + " sees " + std::to_string(total_number_of_registered_synchronizers) + " synchronizers");
+            if (server_ids[i - 1] == synchID)
+                continue;
 
-            for (int i = 1; i <= total_number_of_registered_synchronizers; i++)
-            {
-                if (followerServers.serverid(i - 1) == synchID)
-                {
-                    continue;
-                }
-                std::string queueName = "synch" + std::to_string(i) + "_users_queue";
-                publishMessage(queueName, message);
-                log(INFO, "Published user list to " + queueName);
-            }
-        }
-        else
-        {
-            log(ERROR, "Failed to get follower server list from coordinator: " + status.error_message());
+            std::string queueName = "synch" + std::to_string(i) + "_users_queue";
+            publishMessage(queueName, message);
+            log(INFO, "Published user list to " + queueName);
         }
     }
 
@@ -280,6 +272,7 @@ public:
     {
         Json::Value relations;
         std::vector<std::string> users = get_all_users_func(synchID);
+        bool hasRelations = false;
 
         for (const auto &client : users)
         {
@@ -296,31 +289,21 @@ public:
             if (!followerList.empty())
             {
                 relations[client] = followerList;
+                hasRelations = true;
             }
         }
 
-        grpc::ClientContext context;
-        csce438::ServerList followerServers;
-        csce438::ID id;
-        id.set_id(synchID);
-
-        // TODO: hardcoding 6 here, but you need to get list of all synchronizers from coordinator as before
-        grpc::Status status = coordinator_stub_->GetAllFollowerServers(&context, id, &followerServers);
-
-        if (!status.ok())
+        if (!hasRelations)
         {
-            log(ERROR, "Failed to get follower server list from coordinator: " + status.error_message());
+            log(INFO, "No client relations to publish");
             return;
         }
 
-        total_number_of_registered_synchronizers = followerServers.serverid_size();
-
         for (int i = 1; i <= total_number_of_registered_synchronizers; i++)
         {
-            if (followerServers.serverid(i - 1) == synchID)
-            {
+            if (server_ids[i - 1] == synchID)
                 continue;
-            }
+            
             std::string queueName = "synch" + std::to_string(i) + "_clients_relations_queue";
             Json::FastWriter writer;
             std::string message = writer.write(relations);
@@ -383,13 +366,12 @@ public:
             int client_cluster = ((clientId - 1) % 3) + 1;
             // only do this for clients in your own cluster
             if (client_cluster != clusterID)
-            {
                 continue;
-            }
 
             std::vector<std::string> timeline = get_tl_or_fl(synchID, clientId, true);
             if (timeline.empty())
             {
+                log(INFO, "No timeline to publish for client " + client);
                 continue;
             }
 
@@ -404,12 +386,13 @@ public:
                 timeline_json[client] = Json::arrayValue;
                 for (size_t i = 0; i < timeline.size(); i += 4)
                 {
-                    if (i + 2 >= timeline.size() || timeline[i].substr(0, 2) != "T ")
+                    if (timeline[i].substr(0, 2) != "T ")
                         continue;
 
                     std::string timestamp = timeline[i].substr(2);
                     std::string username = timeline[i + 1].substr(2);
                     std::string message = timeline[i + 2].substr(2);
+                    log(INFO, "Adding post to timeline JSON: " + timestamp + ", " + username + ", " + message);
 
                     Json::Value post;
                     post["timestamp"] = timestamp;
@@ -420,34 +403,19 @@ public:
                 Json::FastWriter writer;
                 std::string message = writer.write(timeline_json);
 
-                grpc::ClientContext context;
-                csce438::ServerList followerServers;
-                csce438::ID id;
-                id.set_id(synchID);
-
-                // need to write to the follower's synchronizer queue
-                grpc::Status status = coordinator_stub_->GetAllFollowerServers(&context, id, &followerServers);
-
-                if (!status.ok())
-                {
-                    log(ERROR, "Failed to get follower server list from coordinator: " + status.error_message());
-                    return;
-                }
-
                 log(INFO, "Attempting to publish to follower " + follower);
                 int followerId = std::stoi(follower);
                 int followerClusterID = ((followerId - 1) % 3) + 1;
 
-                total_number_of_registered_synchronizers = followerServers.serverid_size();
-                for (int i = 0; i < followerServers.serverid_size(); ++i)
+                for (int i = 0; i < total_number_of_registered_synchronizers; i++)
                 {
                     // Send to the follower's synchronizer,
                     // Ensure that you are not sending follower updates if they are in the same cluster
                     // Ensure you are not sending to yourself
-                    log(INFO, "Checking cluster " + followerServers.clusterid(i));
-                    if (std::stoi(followerServers.clusterid(i)) == followerClusterID && client_cluster != followerClusterID && followerServers.serverid(i) != synchID)
+                    log(INFO, "Checking cluster " + clusterIDs[i] + " for follower " + follower);
+                    if (std::stoi(clusterIDs[i]) == followerClusterID && client_cluster != followerClusterID && server_ids[i] != synchID)
                     {
-                        std::string queueName = "synch" + std::to_string(followerServers.serverid(i)) + "_timeline_queue";
+                        std::string queueName = "synch" + std::to_string(server_ids[i]) + "_timeline_queue";
                         publishMessage(queueName, message);
                         log(INFO, "Published timeline update to " + queueName);
                     }
@@ -478,23 +446,10 @@ public:
                     std::ofstream timelineStream(timelineFile, std::ios::app | std::ios::out | std::ios::in);
 
                     if (timelineLengths.find(clientId) == timelineLengths.end())
-                    {
                         timelineLengths[clientId] = 0;
-                    }
 
                     log(INFO, "Updating timeline for client " + clientId);
                     std::vector<std::string> followers = getFollowersOfUser(std::stoi(clientId));
-                    int followingLength = timelineLengths[clientId];
-
-                    for (int i = timelineLengths[clientId]; i < root[clientId].size(); i++)
-                    {
-                        const auto &post = root[clientId][i];
-                        timelineStream << "T " << post["timestamp"].asString() << "\n";
-                        timelineStream << "U " << post["username"].asString() << "\n";
-                        timelineStream << "W " << post["message"].asString() << "\n";
-                        timelineStream << "\n";
-                        timelineLengths[clientId]++;
-                    }
 
                     // Update the following file as well
                     for (const auto &follower : followers)
@@ -720,8 +675,10 @@ void run_synchronizer(std::string coordIP, std::string coordPort, std::string po
         // making a request to the coordinator to see count of follower synchronizers
         coordinator_stub_->GetAllFollowerServers(&context, id, &followerServers);
 
-        std::vector<int> server_ids;
-        std::vector<std::string> hosts, ports;
+        for (int serverid : followerServers.serverid())
+        {
+            server_ids.push_back(serverid);
+        }
         for (std::string host : followerServers.hostname())
         {
             hosts.push_back(host);
@@ -730,9 +687,17 @@ void run_synchronizer(std::string coordIP, std::string coordPort, std::string po
         {
             ports.push_back(port);
         }
-        for (int serverid : followerServers.serverid())
+        for (std::string type : followerServers.type())
         {
-            server_ids.push_back(serverid);
+            type.push_back(type);
+        }
+        for (std::string clusterID : followerServers.clusterid())
+        {
+            clusterIDs.push_back(clusterID);
+        }
+        for (std::string isMaster : followerServers.ismaster())
+        {
+            isMasters.push_back(isMaster);
         }
 
         // update the count of how many follower sychronizer processes the coordinator has registered
