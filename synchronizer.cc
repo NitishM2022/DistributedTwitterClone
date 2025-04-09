@@ -200,6 +200,8 @@ public:
         // YOUR CODE HERE
         std::string queueName = "synch" + std::to_string(synchID) + "_users_queue";
         std::string message = consumeMessage(queueName, 1000); // 1 second timeout
+        log(INFO, "Received user list from " + queueName);
+        log(INFO, "Message: " + message);
         if (!message.empty())
         {
             Json::Value root;
@@ -208,6 +210,7 @@ public:
             {
                 for (const auto &user : root["users"])
                 {
+                    log(INFO, "Received user: " + user.asString());
                     allUsers.push_back(user.asString());
                 }
             }
@@ -276,6 +279,8 @@ public:
         // YOUR CODE HERE
         std::string queueName = "synch" + std::to_string(synchID) + "_clients_relations_queue";
         std::string message = consumeMessage(queueName, 1000); // 1 second timeout
+        log(INFO, "Received client relations from " + queueName);
+        log(INFO, "Message: " + message);
 
         if (!message.empty())
         {
@@ -401,6 +406,8 @@ public:
     {
         std::string queueName = "synch" + std::to_string(synchID) + "_timeline_queue";
         std::string message = consumeMessage(queueName, 1000); // 1 second timeout
+        log(INFO, "Received timeline update from " + queueName);
+        log(INFO, "Message: " + message);
 
         if (!message.empty())
         {
