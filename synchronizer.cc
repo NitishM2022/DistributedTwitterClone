@@ -689,7 +689,7 @@ void run_synchronizer(std::string coordIP, std::string coordPort, std::string po
         {
             ports.push_back(port);
         }
-        for (std::string types : followerServers.type())
+        for (std::string type : followerServers.type())
         {
             types.push_back(type);
         }
@@ -697,7 +697,7 @@ void run_synchronizer(std::string coordIP, std::string coordPort, std::string po
         {
             clusterIDs.push_back(clusterID);
         }
-        for (std::string isMaster : followerServers.ismaster())
+        for (bool isMaster : followerServers.ismaster())
         {
             isMasters.push_back(isMaster);
         }
