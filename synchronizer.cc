@@ -587,8 +587,7 @@ void RunServer(std::string coordIP, std::string coordPort, std::string port_no, 
                     log(WARNING, "Received message with unknown routing key: " + routingKey);
                 }
             }
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            std::this_thread::sleep_for(std::chrono::seconds(1));
             // you can modify this sleep period as per your choice
         } });
 
