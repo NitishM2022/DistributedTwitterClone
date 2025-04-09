@@ -117,24 +117,46 @@ private:
                            0, 0, NULL, amqp_cstring_bytes(message.c_str()));
     }
 
-    std::string consumeMessage(const std::string &queueName, int timeout_ms = 5000)
+    // consumeMessage function using ACK/NACK based on queueName parameter
+    std::string consumeMessage(const std::string &expectedQueueName, int timeout_ms = 5000)
     {
-        amqp_rpc_reply_t get_result;
-        std::string message = "";
-        amqp_message_t amqp_message;
+        amqp_envelope_t envelope;
+        amqp_maybe_release_buffers(conn);
 
-        get_result = amqp_basic_get(conn, channel, amqp_cstring_bytes(queueName.c_str()), 1); // no_ack = 1 for simplicity
+        struct timeval timeout_tv; // Renamed variable
+        struct timeval *timeout_ptr = nullptr;
+        if (timeout_ms >= 0) {
+            timeout_tv.tv_sec = timeout_ms / 1000;
+            timeout_tv.tv_usec = (timeout_ms % 1000) * 1000;
+            timeout_ptr = &timeout_tv;
+        }
 
-        if (get_result.reply_type == AMQP_RESPONSE_NORMAL)
+
+        amqp_rpc_reply_t res = amqp_consume_message(conn, &envelope, timeout_ptr, 0);
+
+        std::string message_body = "";
+
+        if (res.reply_type == AMQP_RESPONSE_NORMAL)
         {
-            amqp_rpc_reply_t read_result = amqp_read_message(conn, channel, &amqp_message, 0);
-            if (read_result.reply_type == AMQP_RESPONSE_NORMAL)
+            // Extract the routing key the message arrived with
+            std::string received_routing_key(static_cast<char*>(envelope.routing_key.bytes), envelope.routing_key.len);
+
+            if (received_routing_key == expectedQueueName)
             {
-                message.assign(static_cast<char *>(amqp_message.body.bytes), amqp_message.body.len);
-                amqp_destroy_message(&amqp_message);
+                // Match: Process and ACK
+                message_body.assign(static_cast<char *>(envelope.message.body.bytes), envelope.message.body.len);
+                amqp_basic_ack(conn, channel, envelope.delivery_tag, 0);
+                // log success
+            }
+            else
+            {
+                amqp_basic_nack(conn, channel, envelope.delivery_tag, 0, 1); // requeue = true
+                message_body = ""; // Indicate failure for this call
             }
         }
-        return message;
+
+        amqp_destroy_envelope(&envelope);
+        return message_body;
     }
 
 public:
@@ -146,6 +168,19 @@ public:
         declareQueue("synch" + std::to_string(synchID) + "_clients_relations_queue");
         declareQueue("synch" + std::to_string(synchID) + "_timeline_queue");
         // TODO: add or modify what kind of queues exist in your clusters based on your needs
+
+        std::string queueName = "synch" + std::to_string(synchID) + "_users_queue";
+        amqp_basic_consume(conn, channel, amqp_cstring_bytes(queueName.c_str()),
+                           amqp_empty_bytes, 0, 0, 0, amqp_empty_table);
+
+        queueName = "synch" + std::to_string(synchID) + "_clients_relations_queue";
+        amqp_basic_consume(conn, channel, amqp_cstring_bytes(queueName.c_str()),
+                           amqp_empty_bytes, 0, 0, 0, amqp_empty_table);
+
+        queueName = "synch" + std::to_string(synchID) + "_timeline_queue";
+        amqp_basic_consume(conn, channel, amqp_cstring_bytes(queueName.c_str()),
+                           amqp_empty_bytes, 0, 0, 0, amqp_empty_table);
+        
     }
 
     void publishUserList()
@@ -677,25 +712,28 @@ std::vector<std::string> get_lines_from_file(std::string filename)
 {
     std::vector<std::string> users;
     std::string user;
-    std::ifstream file;
-    file.open(filename);
+    std::ifstream file(filename);
+
+    if (!file.is_open())
+    {
+        log(ERROR, "Failed to open file: " + filename);
+        return users; // Return empty vector if file cannot be opened
+    }
+
     if (file.peek() == std::ifstream::traits_type::eof())
     {
-        // return empty vector if empty file
-        // std::cout<<"returned empty vector bc empty file"<<std::endl;
+        // Return empty vector if file is empty
         file.close();
         return users;
     }
-    while (file)
-    {
-        getline(file, user);
 
+    while (getline(file, user))
+    {
         if (!user.empty())
             users.push_back(user);
     }
 
     file.close();
-
     return users;
 }
 
@@ -745,14 +783,14 @@ bool file_contains_user(std::string filename, std::string user)
     users = get_lines_from_file(filename);
     for (int i = 0; i < users.size(); i++)
     {
-        std::cout << "Checking if " << user << " = " << users[i] << std::endl;
+        std::cout<<"Checking if "<<user<<" = "<<users[i]<<std::endl;
         if (user == users[i])
         {
-            std::cout << "found" << std::endl;
+            std::cout<<"found"<<std::endl;
             return true;
         }
     }
-    std::cout << "not found" << std::endl;
+    std::cout<<"not found"<<std::endl;
     return false;
 }
 
