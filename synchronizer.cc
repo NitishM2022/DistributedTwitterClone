@@ -204,7 +204,7 @@ public:
         std::vector<std::string> allUsers;
 
         // YOUR CODE HERE
-        log(INFO, "Received user list from " + queueName);
+        log(INFO, "Received user list");
         log(INFO, "Message: " + message);
         if (!message.empty())
         {
@@ -277,7 +277,7 @@ public:
         std::vector<std::string> allUsers = get_all_users_func(synchID);
 
         // YOUR CODE HERE
-        log(INFO, "Received client relations from " + queueName);
+        log(INFO, "Received client relations ");
         log(INFO, "Message: " + message);
 
         if (!message.empty())
@@ -402,7 +402,7 @@ public:
     // For each client in your cluster, consume messages from your timeline queue and modify your client's timeline files based on what the users they follow posted to their timeline
     void consumeTimelines(const std::string& message)
     {
-        log(INFO, "Received timeline update from " + queueName);
+        log(INFO, "Received timeline update ");
         log(INFO, "Message: " + message);
 
         if (!message.empty())
