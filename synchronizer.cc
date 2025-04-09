@@ -413,7 +413,6 @@ public:
                 int followerClusterID = ((followerId - 1) % 3) + 1;
 
                 // Do not send intra cluster updates
-                log(INFO, "Checking cluster " + clusterIDs[i] + " for follower " + follower);
                 if (client_cluster != followerClusterID)
                 {
                     std::string queueName = "synch" + std::to_string(followerClusterID) + "_timeline_queue";
@@ -916,8 +915,8 @@ std::vector<std::string> getMyFollowers(int ID)
     std::vector<std::string> followers;
     std::string clientID = std::to_string(ID);
 
-    std::string file = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + userID + "_followers.txt";
-    std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + userID + "_followers.txt";
+    std::string file = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + ID + "_followers.txt";
+    std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + ID + "_followers.txt";
     sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
 
     sem_wait(fileSem);
