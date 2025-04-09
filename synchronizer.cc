@@ -384,7 +384,7 @@ public:
                     // Send to the follower's synchronizer,
                     // Ensure that you are not sending follower updates if they are in the same cluster
                     // Ensure you are not sending to yourself
-                    log(INFO, "Checking cluster " + std::to_string(followerServers.clusterid(i)));
+                    log(INFO, "Checking cluster " + followerServers.clusterid(i));
                     if (std::stoi(followerServers.clusterid(i)) == followerClusterID && client_cluster != followerClusterID && followerServers.serverid(i) != synchID)
                     {
                         std::string queueName = "synch" + std::to_string(followerServers.serverid(i)) + "_timeline_queue";
