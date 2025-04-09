@@ -86,7 +86,8 @@ std::vector<std::string> get_lines_from_file(std::string, std::string);
 std::vector<std::string> get_all_users_func(int);
 std::vector<std::string> get_tl_or_fl(int, int, bool);
 std::vector<std::string> getFollowersOfUser(int);
-std::vector<std::string> getMyFollowers(int) bool file_contains_user(std::string filename, std::string user);
+std::vector<std::string> getMyFollowers(int);
+bool file_contains_user(std::string filename, std::string user);
 
 void Heartbeat(std::string coordinatorIp, std::string coordinatorPort, ServerInfo serverInfo, int syncID);
 
