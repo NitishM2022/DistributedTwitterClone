@@ -223,6 +223,7 @@ public:
 
         for (const auto &client : users)
         {
+            log(INFO, "Publishing client relations for client " + client);
             int clientId = std::stoi(client);
             std::vector<std::string> followers = getFollowersOfUser(clientId);
 
@@ -317,6 +318,7 @@ public:
 
         for (const auto &client : users)
         {
+            log(INFO, "Publishing timeline for client " + client);
             int clientId = std::stoi(client);
             int client_cluster = ((clientId - 1) % 3) + 1;
             // only do this for clients in your own cluster
@@ -372,6 +374,7 @@ public:
                     return;
                 }
 
+                log(INFO, "Attempting to publish to follower " + follower);
                 int followerId = std::stoi(follower);
                 int followerClusterID = ((followerId - 1) % 3) + 1;
 
@@ -381,6 +384,7 @@ public:
                     // Send to the follower's synchronizer,
                     // Ensure that you are not sending follower updates if they are in the same cluster
                     // Ensure you are not sending to yourself
+                    log(INFO, "Checking cluster " + std::to_string(followerServers.clusterid(i)));
                     if (std::stoi(followerServers.clusterid(i)) == followerClusterID && client_cluster != followerClusterID && followerServers.serverid(i) != synchID)
                     {
                         std::string queueName = "synch" + std::to_string(followerServers.serverid(i)) + "_timeline_queue";
@@ -418,6 +422,7 @@ public:
                         timelineLengths[clientId] = 0;
                     }
 
+                    log(INFO, "Updating timeline for client " + clientId);
                     std::vector<std::string> followers = getFollowersOfUser(std::stoi(clientId));
                     int followingLength = timelineLengths[clientId];
 
