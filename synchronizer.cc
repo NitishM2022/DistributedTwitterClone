@@ -615,7 +615,7 @@ void RunServer(std::string coordIP, std::string coordPort, std::string port_no, 
                 } else {
                     log(WARNING, "Received message with unknown routing key: " + routingKey);
                 }
-                std::this_thread::sleep_for(std::chrono::seconds(1));
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
         } });
 
@@ -772,7 +772,7 @@ std::vector<std::string> get_lines_from_file(std::string filename)
 
     if (!file.is_open())
     {
-        std::cerr << "Error opening file: " << filename << std::endl;
+        // std::cerr << "Error opening file: " << filename << std::endl;
         return users; // Return empty vector if file can't be opened
     }
 
@@ -840,7 +840,7 @@ bool file_contains_user(std::string filename, std::string user)
         std::cout << "Checking if " << user << " = " << users[i] << std::endl;
         if (user == users[i])
         {
-            std::cout << "found" << std::endl;
+            // std::cout << "found" << std::endl;
             return true;
         }
     }
