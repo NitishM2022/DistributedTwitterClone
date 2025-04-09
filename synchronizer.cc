@@ -117,46 +117,26 @@ private:
                            0, 0, NULL, amqp_cstring_bytes(message.c_str()));
     }
 
-    // consumeMessage function using ACK/NACK based on queueName parameter
-    std::string consumeMessage(const std::string &expectedQueueName, int timeout_ms = 5000)
+    std::pair<std::string, std::string> consumeMessage(int timeout_ms = 5000)
     {
         amqp_envelope_t envelope;
         amqp_maybe_release_buffers(conn);
 
-        struct timeval timeout_tv; // Renamed variable
-        struct timeval *timeout_ptr = nullptr;
-        if (timeout_ms >= 0) {
-            timeout_tv.tv_sec = timeout_ms / 1000;
-            timeout_tv.tv_usec = (timeout_ms % 1000) * 1000;
-            timeout_ptr = &timeout_tv;
-        }
+        struct timeval timeout;
+        timeout.tv_sec = timeout_ms / 1000;
+        timeout.tv_usec = (timeout_ms % 1000) * 1000;
 
+        amqp_rpc_reply_t res = amqp_consume_message(conn, &envelope, &timeout, 0);
 
-        amqp_rpc_reply_t res = amqp_consume_message(conn, &envelope, timeout_ptr, 0);
-
-        std::string message_body = "";
-
-        if (res.reply_type == AMQP_RESPONSE_NORMAL)
+        if (res.reply_type != AMQP_RESPONSE_NORMAL)
         {
-            // Extract the routing key the message arrived with
-            std::string received_routing_key(static_cast<char*>(envelope.routing_key.bytes), envelope.routing_key.len);
-
-            if (received_routing_key == expectedQueueName)
-            {
-                // Match: Process and ACK
-                message_body.assign(static_cast<char *>(envelope.message.body.bytes), envelope.message.body.len);
-                amqp_basic_ack(conn, channel, envelope.delivery_tag, 0);
-                // log success
-            }
-            else
-            {
-                amqp_basic_nack(conn, channel, envelope.delivery_tag, 0, 1); // requeue = true
-                message_body = ""; // Indicate failure for this call
-            }
+            return {"", ""}; // Return empty message and routing key on failure
         }
 
+        std::string message(static_cast<char *>(envelope.message.body.bytes), envelope.message.body.len);
+        std::string routing_key((char *)envelope.routing_key.bytes, envelope.routing_key.len);
         amqp_destroy_envelope(&envelope);
-        return message_body;
+        return {message, routing_key};
     }
 
 public:
@@ -219,13 +199,12 @@ public:
         }
     }
 
-    void consumeUserLists()
+    void consumeUserLists(const std::string& message)
     {
         std::vector<std::string> allUsers;
 
         // YOUR CODE HERE
-        std::string queueName = "synch" + std::to_string(synchID) + "_users_queue";
-        std::string message = consumeMessage(queueName, 1000); // 1 second timeout
+        message = consumeMessage(queueName, 1000); // 1 second timeout
         log(INFO, "Received user list from " + queueName);
         log(INFO, "Message: " + message);
         if (!message.empty())
@@ -294,13 +273,12 @@ public:
         }
     }
 
-    void consumeClientRelations()
+    void consumeClientRelations(const std::string& message)
     {
         std::vector<std::string> allUsers = get_all_users_func(synchID);
 
         // YOUR CODE HERE
-        std::string queueName = "synch" + std::to_string(synchID) + "_clients_relations_queue";
-        std::string message = consumeMessage(queueName, 1000); // 1 second timeout
+        message = consumeMessage(queueName, 1000); // 1 second timeout
         log(INFO, "Received client relations from " + queueName);
         log(INFO, "Message: " + message);
 
@@ -424,10 +402,9 @@ public:
     }
 
     // For each client in your cluster, consume messages from your timeline queue and modify your client's timeline files based on what the users they follow posted to their timeline
-    void consumeTimelines()
+    void consumeTimelines(const std::string& message)
     {
-        std::string queueName = "synch" + std::to_string(synchID) + "_timeline_queue";
-        std::string message = consumeMessage(queueName, 1000); // 1 second timeout
+        message = consumeMessage(queueName, 1000); // 1 second timeout
         log(INFO, "Received timeline update from " + queueName);
         log(INFO, "Message: " + message);
 
@@ -556,9 +533,24 @@ void RunServer(std::string coordIP, std::string coordPort, std::string port_no, 
     std::thread consumerThread([&rabbitMQ]()
                                {
         while (true) {
-            rabbitMQ.consumeUserLists();
-            rabbitMQ.consumeClientRelations();
-            rabbitMQ.consumeTimelines();
+            std::pair<std::string, std::string> msg_pair = rabbitMQ.consumeMessage(1000);
+
+            if (!msg_pair.first.empty()) {
+                const std::string& message = msg_pair.first;
+                const std::string& routingKey = msg_pair.second;
+
+                log(INFO, "Consumed message with routing key: " + routingKey);
+
+                if (routingKey.find("users") != std::string::npos) {
+                    rabbitMQ.consumeUserLists(message);
+                } else if (routingKey.find("relations") != std::string::npos) {
+                    rabbitMQ.consumeClientRelations(message);
+                } else if (routingKey.find("timeline") != std::string::npos) {
+                    rabbitMQ.consumeTimelines(message);
+                } else {
+                    log(WARNING, "Received message with unknown routing key: " + routingKey);
+                }
+            }
             std::this_thread::sleep_for(std::chrono::seconds(5));
             // you can modify this sleep period as per your choice
         } });
@@ -712,25 +704,18 @@ std::vector<std::string> get_lines_from_file(std::string filename)
 {
     std::vector<std::string> users;
     std::string user;
-    std::ifstream file(filename);
+    std::ifstream file(filename); // Open the file directly in the constructor
 
-    if (!file.is_open())
-    {
-        log(ERROR, "Failed to open file: " + filename);
-        return users; // Return empty vector if file cannot be opened
-    }
-
-    if (file.peek() == std::ifstream::traits_type::eof())
-    {
-        // Return empty vector if file is empty
-        file.close();
-        return users;
+    if (!file.is_open()) {
+        std::cerr << "Error opening file: " << filename << std::endl;
+        return users; // Return empty vector if file can't be opened
     }
 
     while (getline(file, user))
     {
-        if (!user.empty())
+        if (!user.empty()) { // Only add non-empty lines
             users.push_back(user);
+        }
     }
 
     file.close();
