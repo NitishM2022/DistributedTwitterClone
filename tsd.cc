@@ -163,11 +163,11 @@ class SNSServiceImpl final : public SNSService::Service
   Status Follow(ServerContext *context, const Request *request, Reply *reply) override
   {
     if (isMaster){
-      grpc::ClientContext context;
-      ServerList slaveServers;
+      grpc::ClientContext serverContext;
       ID id;
+      ServerList slaveServers;
       id.set_id(clusterID);
-      coordinator_stub_->GetSlaveServers(context, request, list_reply);
+      coordinator_stub_->GetSlaveServers(serverContext, id, slaveServers);
 
       for(int i = 0; i < slaveServers.serverid_size(); i++)
       {
@@ -175,7 +175,7 @@ class SNSServiceImpl final : public SNSService::Service
         std::unique_ptr<csce438::SNSService::Stub> slave_stub_;
         slave_stub_ = SNSService::NewStub(grpc::CreateChannel(slaveAddr, grpc::InsecureChannelCredentials()));
 
-        slave_stub_->Follow(&context, request, reply);
+        slave_stub_->Follow(&context, *request, reply);
       }
     }
 
@@ -239,11 +239,11 @@ class SNSServiceImpl final : public SNSService::Service
   Status Login(ServerContext *context, const Request *request, Reply *reply) override
   {
     if (isMaster){
-      grpc::ClientContext context;
-      ServerList slaveServers;
+      grpc::ClientContext serverContext;
       ID id;
+      ServerList slaveServers;
       id.set_id(clusterID);
-      coordinator_stub_->GetSlaveServers(context, request, list_reply);
+      coordinator_stub_->GetSlaves(serverContext, id, slaveServers);
 
       for(int i = 0; i < slaveServers.serverid_size(); i++)
       {
@@ -251,7 +251,7 @@ class SNSServiceImpl final : public SNSService::Service
         std::unique_ptr<csce438::SNSService::Stub> slave_stub_;
         slave_stub_ = SNSService::NewStub(grpc::CreateChannel(slaveAddr, grpc::InsecureChannelCredentials()));
 
-        slave_stub_->Login(&context, request, reply);
+        slave_stub_->Login(&context, *request, reply);
       }
     }
 
@@ -293,11 +293,11 @@ class SNSServiceImpl final : public SNSService::Service
   Status Timeline(ServerContext *context, ServerReaderWriter<Message, Message> *stream) override
   {
     if (isMaster){
-      grpc::ClientContext context;
+      grpc::ClientContext serverContext;
       ServerList slaveServers;
       ID id;
       id.set_id(clusterID);
-      coordinator_stub_->GetSlaveServers(context, request, list_reply);
+      coordinator_stub_->GetSlaves(serverContext, id, slaveServers);
 
       for(int i = 0; i < slaveServers.serverid_size(); i++)
       {
@@ -305,7 +305,7 @@ class SNSServiceImpl final : public SNSService::Service
         std::unique_ptr<csce438::SNSService::Stub> slave_stub_;
         slave_stub_ = SNSService::NewStub(grpc::CreateChannel(slaveAddr, grpc::InsecureChannelCredentials()));
 
-        slave_stub_->Timeline(&context, stream);
+        slave_stub_->Timeline(&context);
       }
     }
 
