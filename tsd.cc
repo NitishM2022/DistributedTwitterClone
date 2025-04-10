@@ -300,16 +300,25 @@ class SNSServiceImpl final : public SNSService::Service
     Client *curr = nullptr;
     std::string u;
 
+    std::cout << "Timeline started for " << u << std::endl;
+    std::cout << "Server is master " << isMaster << " in cluster " << clusterID << std::endl; 
+    std::cout << "Cluster subdirectory: " << clusterSubdirectory << std::endl;
+
+
+    std::cout << "Server in cluster " << clusterID << " getlast20posts" << std::endl;
     // Initialization block (executed only once)
     if (stream->Read(&m))
     {
       u = m.username();
+
+      std::cout << "Server in cluster " << clusterID << " calling getClient for " << u << std::endl;
       curr = getClient(u);
       log(INFO, "Timeline request from client " + u);
 
       std::vector<Message> last_posts = getLastNPosts(u, 20);
       log(INFO, "Got last N posts for client " + u);
 
+      std::cout << "Server in cluster " << clusterID << " sending last 20 posts" << std::endl;
       for (const auto &post : last_posts)
       {
         stream->Write(post);
@@ -322,6 +331,7 @@ class SNSServiceImpl final : public SNSService::Service
 
     // thread to monitor u_following.txt file
     // I think it is ok for this thread to be here since this function can only be called once
+    std::cout << "Server in cluster " << clusterID << " starting following thread" << std::endl;
     std::thread following([=]()
                           {
       log(INFO, "Starting following thread for client " + u);
@@ -338,6 +348,7 @@ class SNSServiceImpl final : public SNSService::Service
     // update client timeline file
     while (stream->Read(&m))
     {
+      std::cout << "Server in cluster " << clusterID << " received message from client " << u << std::endl;
       log(INFO, "Received message from client " + u);
       std::time_t time = m.timestamp().seconds();
       std::tm *ltime = std::localtime(&time);
@@ -357,12 +368,14 @@ class SNSServiceImpl final : public SNSService::Service
             log(INFO, "Client " + u + " is not in the same cluster as follower " + f);
             continue;
           }
+          std::cout << "Server in cluster " << clusterID << " writing message to client " << u << "'s followers " << f << " following file" << std::endl;
           log(INFO, "Writing message to client " + u + "'s followers " + f + " following file");
           std::string followingFile = "./cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + f + "_following.txt";
           std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + f + "_following.txt";
           sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
 
           sem_wait(fileSem);
+          std::cout << "Server in cluster " << clusterID << " appending to following file for client " << u << "'s followers " << f << std::endl;
           appendTo(followingFile, time_str, u, m.msg());
           sem_post(fileSem);
           sem_close(fileSem);
@@ -375,6 +388,7 @@ class SNSServiceImpl final : public SNSService::Service
         log(ERROR, "Client not found: " + u);
       }
 
+      std::cout << "Server in cluster " << clusterID << " writing received message from client " << u << " to timeline file" << std::endl;
       log(INFO, "Writing received message from client " + u + " to timeline file");
       appendTo("./cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + u + "_timeline.txt", time_str, u, m.msg());
     }
