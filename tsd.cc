@@ -316,7 +316,7 @@ class SNSServiceImpl final : public SNSService::Service
         stream->Write(post);
       }
 
-      //need to set ffl to 0
+      // need to set ffl to 0
       ffl_mutex.lock();
       followingFileLines[u] = 0;
       ffl_mutex.unlock();
@@ -335,8 +335,22 @@ class SNSServiceImpl final : public SNSService::Service
         // -1 indicates get all posts after followingFileLines
         log(INFO, "Getting last N posts for client " + u);
         std::vector<Message> newPosts = getLastNPosts(u, -1);
-        for (const auto &post : newPosts)
-          stream->Write(post);
+        bool writeFail = false;
+        for(int i = 0; i < newPosts.size(); i++){
+          Message post = newPosts[i];
+          if(!stream->Write(post)){
+            ffl_mutex.lock();
+            followingFileLines[u] -= (newPosts.size() - i) * 4; 
+            ffl_mutex.unlock();
+            break;
+          }
+        }
+
+        if(writeFail){
+          std::cout << "Failed to write to stream for client " + u << std::endl;
+          log(INFO, "Failed to write to stream for client " + u);
+          break;
+        }
 
         std::this_thread::sleep_for(std::chrono::seconds(1));
       } });
