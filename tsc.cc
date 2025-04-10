@@ -375,16 +375,14 @@ void Client::Timeline(const std::string &username)
       stream->Write(msg);
     } });
 
-  std::thread reader_thread([stream, this]()
+  std::thread reader_thread([stream, this, username]()
                             {
     Message msg;
     while (stream->Read(&msg)) {
       google::protobuf::Timestamp timestamp = msg.timestamp();
         std::time_t time = timestamp.seconds();
         displayPostMessage(msg.username(), msg.msg(), time);
-        if (u == "3"){
-          std::cout << "3 got " << msg.msg() << " from " << msg.username() << std::endl;
-        }
+        std::cout << username << " got " << msg.msg() << " from " << msg.username() << std::endl;
     } });
 
   writer_thread.join();
