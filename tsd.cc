@@ -338,9 +338,12 @@ class SNSServiceImpl final : public SNSService::Service
       while (alive.load()) {
         // -1 indicates get all posts after followingFileLines
         log(INFO, "Getting last N posts for client " + u);
+        std::cout << "Server in cluster " << clusterID << " getting last N posts in thread for client " << u << std::endl;
         std::vector<Message> newPosts = getLastNPosts(u, -1);
+        std::cout << "Server in cluster " << clusterID << " got last N posts in thread for client" << u << std::endl;
         for (const auto &post : newPosts)
           stream->Write(post);
+        std::cout << "Server in cluster " << clusterID << " sent last N posts in thread for client " << u << std::endl;
 
         std::this_thread::sleep_for(std::chrono::seconds(5));
       } });
