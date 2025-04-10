@@ -296,25 +296,6 @@ class SNSServiceImpl final : public SNSService::Service
 
   Status Timeline(ServerContext *context, ServerReaderWriter<Message, Message> *stream) override
   {
-    if (isMaster)
-    {
-      grpc::ClientContext serverContext;
-      ID id;
-      ServerList slaveServers;
-      id.set_id(clusterID);
-      grpc::Status status = coordinator_stub_->GetSlaves(&serverContext, id, &slaveServers);
-
-      for (int i = 0; i < slaveServers.serverid_size(); i++)
-      {
-        std::string slaveAddr = slaveServers.hostname(i) + ":" + slaveServers.port(i);
-        std::unique_ptr<csce438::SNSService::Stub> slave_stub_;
-        slave_stub_ = SNSService::NewStub(grpc::CreateChannel(slaveAddr, grpc::InsecureChannelCredentials()));
-
-        grpc::ClientContext clientContext;
-        slave_stub_->Timeline(&clientContext);
-      }
-    }
-
     Message m;
     Client *curr = nullptr;
     std::string u;
@@ -457,14 +438,24 @@ std::vector<Message> getLastNPosts(const std::string &u, int n)
   sem_close(fileSem);
   log(INFO, "Got client " + u + " following's posts");
 
-  ffl_mutex.lock();
-  if (followingFileLines.find(u) == followingFileLines.end())
-    followingFileLines[u] = 0;
-  int start = followingFileLines[u];
-  ffl_mutex.unlock();
+  int start = 0;
 
   if (n != -1)
-    start = std::max(start, static_cast<int>(lines.size()) - (n * 4));
+  {
+    // Initial fetch: Calculate start based purely on N, ignore stored value.
+    start = std::max(0, static_cast<int>(lines.size()) - (n * 4));
+    log(INFO, "Initial fetch (n=" + std::to_string(n) + "). Calculated start index: " + std::to_string(start));
+  }
+  else
+  {
+    // Background thread fetch: Use the stored value.
+    ffl_mutex.lock();
+    if (followingFileLines.find(u) == followingFileLines.end())
+      followingFileLines[u] = 0; // Initialize if missing
+    start = followingFileLines[u];
+    ffl_mutex.unlock();
+    log(INFO, "Background fetch (n=-1). Starting from stored index: " + std::to_string(start));
+  }
 
   for (int i = start; i <= lines.size() - 4; i += 4)
   {
