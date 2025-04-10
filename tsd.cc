@@ -475,6 +475,14 @@ std::vector<Message> getLastNPosts(const std::string &u, int n)
     std::string username = lines[i + 1].substr(2);
     std::string message = lines[i + 2].substr(2);
 
+    // Trim leading and trailing whitespace
+    timestamp_str.erase(0, timestamp_str.find_first_not_of(" \t\n\r"));
+    timestamp_str.erase(timestamp_str.find_last_not_of(" \t\n\r") + 1);
+    username.erase(0, username.find_first_not_of(" \t\n\r"));
+    username.erase(username.find_last_not_of(" \t\n\r") + 1);
+    message.erase(0, message.find_first_not_of(" \t\n\r"));
+    message.erase(message.find_last_not_of(" \t\n\r") + 1);
+
     std::tm tm{};
     std::time_t post_time = 0;
 
