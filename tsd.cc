@@ -333,6 +333,7 @@ class SNSServiceImpl final : public SNSService::Service
         bool writeFail = false;
         for(int i = 0; i < newPosts.size(); i++){
           Message post = newPosts[i];
+          //check if client even receiving posts
           if(!stream->Write(post)){
             ffl_mutex.lock();
             followingFileLines[u] -= (newPosts.size() - i) * 4; 
@@ -344,7 +345,7 @@ class SNSServiceImpl final : public SNSService::Service
 
         if(writeFail){
           std::cout << "Failed to write to stream for client " + u << std::endl;
-          log(INFO, "Failed to write to stream for client " + u);
+          log(ERROR, "Failed to write to stream for client " + u);
           break;
         }
 
