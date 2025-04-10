@@ -342,6 +342,7 @@ class SNSServiceImpl final : public SNSService::Service
             ffl_mutex.lock();
             followingFileLines[u] -= (newPosts.size() - i) * 4; 
             ffl_mutex.unlock();
+            writeFail = true;
             break;
           }
         }
