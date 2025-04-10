@@ -259,10 +259,10 @@ class CoordServiceImpl final : public CoordService::Service
         return Status::OK;
     }
 
-    Staus GetSlaves(ServerContext *context, const ID *id, ServerList *serverlist) override
+    // pass in cluster id
+    Status GetSlaves(ServerContext *context, const ID *id, ServerList *serverlist) override
     {
-        int clientID = id->id();
-        int clusterID = ((clientID - 1) % 3) + 1;
+        int clusterID = id->id();
 
         v_mutex.lock();
         for (auto &server : clusters[clusterID - 1])
