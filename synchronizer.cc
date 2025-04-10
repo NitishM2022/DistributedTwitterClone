@@ -486,7 +486,7 @@ public:
                         sem_post(fileSem);
                         sem_close(fileSem);
                     }
-                    // Have to update it outside since clients can be on the same cluster
+                    // Have to update it outside since followers can be on the same cluster
                     timelineLengths[clientId] = root[clientId].size();
                 }
             }

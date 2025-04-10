@@ -339,7 +339,6 @@ class SNSServiceImpl final : public SNSService::Service
     // update client timeline file
     while (stream->Read(&m))
     {
-      std::cout << "Server in cluster " << clusterID << " received message from client " << u << std::endl;
       log(INFO, "Received message from client " + u);
       std::time_t time = m.timestamp().seconds();
       std::tm *ltime = std::localtime(&time);
@@ -359,14 +358,12 @@ class SNSServiceImpl final : public SNSService::Service
             log(INFO, "Client " + u + " is not in the same cluster as follower " + f);
             continue;
           }
-          std::cout << "Server in cluster " << clusterID << " writing message to client " << u << "'s followers " << f << " following file" << std::endl;
           log(INFO, "Writing message to client " + u + "'s followers " + f + " following file");
           std::string followingFile = "./cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + f + "_following.txt";
           std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + f + "_following.txt";
           sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
 
           sem_wait(fileSem);
-          std::cout << "Server in cluster " << clusterID << " appending to following file for client " << u << "'s followers " << f << std::endl;
           appendTo(followingFile, time_str, u, m.msg());
           sem_post(fileSem);
           sem_close(fileSem);
@@ -379,7 +376,6 @@ class SNSServiceImpl final : public SNSService::Service
         log(ERROR, "Client not found: " + u);
       }
 
-      std::cout << "Server in cluster " << clusterID << " writing received message from client " << u << " to timeline file" << std::endl;
       log(INFO, "Writing received message from client " + u + " to timeline file");
       appendTo("./cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + u + "_timeline.txt", time_str, u, m.msg());
     }
