@@ -326,7 +326,12 @@ class SNSServiceImpl final : public SNSService::Service
     std::thread following([=]()
                           {
       log(INFO, "Starting following thread for client " + u);
-      while (alive.load()) {
+      if (context->IsCancelled())
+      {
+        cout << "Timeline cancelled  for client " << u << endl;
+        return;
+      }
+      while (alive.load() && !context->IsCancelled()) {
         // -1 indicates get all posts after followingFileLines
         log(INFO, "Getting last N posts for client " + u);
         if (u == "3"){
