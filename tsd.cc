@@ -489,7 +489,8 @@ std::vector<Message> getLastNPosts(const std::string &u, int n)
   }
 
   std::cout << "Server in cluster " << clusterID << " starting to parse following file for user " << u << std::endl;
-  for (int i = start; i <= lines.size() - 4; i += 4)
+  std::cout << "Server in cluster " << clusterID << " parsing this many lines " << lines.size() << std::endl;
+  for (int i = start; i + 2 < lines.size(); i += 4)
   {
     if (lines[i].substr(0, 2) != "T " ||
         lines[i + 1].substr(0, 2) != "U " ||
