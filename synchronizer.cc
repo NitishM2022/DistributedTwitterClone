@@ -365,6 +365,7 @@ public:
 
         for (const auto &client : users)
         {
+            std::cout << "Publishing timeline for client " << client << " in cluster " << clusterID << std::endl;
             log(INFO, "Publishing timeline for client " + client);
             int clientId = std::stoi(client);
             int client_cluster = getClusterID(client);
@@ -374,6 +375,8 @@ public:
                 continue;
 
             std::vector<std::string> timeline = get_tl_or_fl(synchID, clientId, true);
+            std::cout << "Client " << client << " has " << timeline.size() << " lines in their timeline" << std::endl;
+
             if (timeline.empty())
             {
                 log(INFO, "No timeline to publish for client " + client);
@@ -405,6 +408,7 @@ public:
 
             // looks at my follower.txt file
             std::vector<std::string> followers = getMyFollowers(clientId);
+            std::cout << "Client " << client << " has " << followers.size() << " followers" << std::endl;
             log(INFO, "For timeline Client " + client + " has " + std::to_string(followers.size()) + " followers");
 
             for (const auto &follower : followers)
@@ -412,6 +416,7 @@ public:
                 // send the timeline updates of your current user to all its followers
 
                 // YOUR CODE HERE
+                std::cout << "Client " << client << " has follower " << follower << std::endl;
                 log(INFO, "Attempting to publish to follower " + follower);
                 int followerId = std::stoi(follower);
 
@@ -422,14 +427,18 @@ public:
                 id.set_id(followerId);
 
                 coordinator_stub_->GetFollowerServers(&context, id, &followerServers);
+                std::cout << "Client " << client  << "'s" << " Follower " << follower << " has " << followerServers.serverid_size() << " servers" << std::endl;
                 for (int i = 0; i < followerServers.serverid_size(); i++)
                 {
+                    std::cout << "Client " << client  << "'s" << " Follower " << follower << " has server id " << followerServers.serverid(i) << std::endl;
                     // do not send intra cluster updates
                     if (client_cluster != std::stoi(followerServers.clusterid(i)))
                     {
+                        std::cout << "Client " << client  << "'s" << " Follower " << follower << " has cluster id " << followerServers.clusterid(i) << std::endl;
                         std::string queueName = "synch" + std::to_string(followerServers.serverid(i)) + "_timeline_queue";
                         publishMessage(queueName, message);
                         log(INFO, "Published timeline update to " + queueName);
+                        std::cout << "Client " << client  << "'s" << " Follower " << follower << " has been published to " << queueName << std::endl;
                     }
                 }
             }
