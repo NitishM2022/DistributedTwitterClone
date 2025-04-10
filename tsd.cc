@@ -336,8 +336,12 @@ class SNSServiceImpl final : public SNSService::Service
         if(u == "3"){
           std::cout << "3 got "<< newPosts.size()  << " lines" << std::endl;
         }
-        for (const auto &post : newPosts)
+        for (const auto &post : newPosts){
+          if(u == "3"){
+            std::cout << "3's server is sending "<< post.msg() << " from " << post.username() << std::endl;
+          }
           stream->Write(post);
+        }
         if(u == "3"){
           std::cout << "3 wrote posts" << std::endl;
         }
@@ -421,7 +425,7 @@ std::vector<Message> getLastNPosts(const std::string &u, int n)
 {
   std::vector<Message> posts;
   if(u == "3"){
-    std::cout << "3 trying in last n posts" << std::endl;
+    std::cout << "3 trying in last "<< n <<" posts" << std::endl;
   }
   log(INFO, "Getting last N posts for user " + u);
   // Get last n posts from the user's following file
@@ -495,9 +499,6 @@ std::vector<Message> getLastNPosts(const std::string &u, int n)
     std::string timestamp_str = lines[i].substr(2);
     std::string username = lines[i + 1].substr(2);
     std::string message = lines[i + 2].substr(2);
-    if(u == "3"){
-      std::cout << "3 got " << timestamp_str << " " << username << " " << message << std::endl;
-    }
 
     // Trim leading and trailing whitespace
     timestamp_str.erase(0, timestamp_str.find_first_not_of(" \t\n\r"));

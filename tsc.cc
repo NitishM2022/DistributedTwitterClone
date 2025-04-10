@@ -382,6 +382,9 @@ void Client::Timeline(const std::string &username)
       google::protobuf::Timestamp timestamp = msg.timestamp();
         std::time_t time = timestamp.seconds();
         displayPostMessage(msg.username(), msg.msg(), time);
+        if (u == "3"){
+          std::cout << "3 got " << msg.msg() << " from " << msg.username() << std::endl;
+        }
     } });
 
   writer_thread.join();
