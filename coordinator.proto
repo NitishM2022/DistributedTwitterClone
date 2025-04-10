@@ -22,7 +22,7 @@ service CoordService{
 
     rpc GetAllFollowerServers (ID) returns (ServerList) {}
     rpc GetFollowerServers (ID) returns (ServerList) {} // multiple because of slaves
-
+    rpc GetSlaves (ID) returns (ServerList) {}
 }
 
 //server info message definition

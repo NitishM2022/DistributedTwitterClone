@@ -77,6 +77,8 @@ std::string clusterSubdirectory = "2"; // default to slave
 std::vector<std::string> otherHosts;
 std::unordered_map<std::string, int> timelineLengths;
 
+std::unique_ptr<csce438::CoordService::Stub> coordinator_stub_;
+
 // server list
 std::vector<int> server_ids;
 std::vector<std::string> hosts, ports, types, clusterIDs;
@@ -91,8 +93,6 @@ bool file_contains_user(std::string, std::string);
 int getClusterID(const std::string &);
 
 void Heartbeat(std::string coordinatorIp, std::string coordinatorPort, ServerInfo serverInfo, int syncID);
-
-std::unique_ptr<csce438::CoordService::Stub> coordinator_stub_;
 
 class SynchronizerRabbitMQ
 {
@@ -342,7 +342,6 @@ public:
                     {
                         for (const auto &follower : root[client])
                         {
-                            std::cout << "Client is followed by " << follower.asString() << std::endl;
                             if (!file_contains_user(followerFile, follower.asString()))
                             {
                                 followerStream << follower.asString() << std::endl;

@@ -258,6 +258,30 @@ class CoordServiceImpl final : public CoordService::Service
 
         return Status::OK;
     }
+
+    Staus GetSlaves(ServerContext *context, const ID *id, ServerList *serverlist) override
+    {
+        int clientID = id->id();
+        int clusterID = ((clientID - 1) % 3) + 1;
+
+        v_mutex.lock();
+        for (auto &server : clusters[clusterID - 1])
+        {
+            if (server->type == "synchronizer" && server->isActive() && !server->isMaster)
+            {
+                serverlist->add_serverid(server->serverID);
+                serverlist->add_hostname(server->hostname);
+                serverlist->add_port(server->port);
+                serverlist->add_type(server->type);
+                serverlist->add_clusterid(std::to_string(server->clusterID).c_str());
+                serverlist->add_ismaster(server->isMaster);
+            }
+        }
+
+        v_mutex.unlock();
+
+        return Status::OK;
+    }
 };
 
 void RunServer(std::string port_no)

@@ -113,6 +113,8 @@ std::unordered_map<std::string, int> followingFileLines;
 std::mutex db_mutex;
 std::unordered_map<std::string, Client *> client_db;
 
+std::unique_ptr<csce438::CoordService::Stub> coordinator_stub_;
+
 std::atomic<bool> alive = true;
 
 Client *getClient(const std::string &);
@@ -125,7 +127,6 @@ class SNSServiceImpl final : public SNSService::Service
 
   Status List(ServerContext *context, const Request *request, ListReply *list_reply) override
   {
-
     std::string u = request->username();
     log(INFO, "List request from " + u);
 
@@ -161,6 +162,23 @@ class SNSServiceImpl final : public SNSService::Service
 
   Status Follow(ServerContext *context, const Request *request, Reply *reply) override
   {
+    if (isMaster){
+      grpc::ClientContext context;
+      ServerList slaveServers;
+      ID id;
+      id.set_id(clusterID);
+      coordinator_stub_->GetSlaveServers(context, request, list_reply);
+
+      for(int i = 0; i < slaveServers.serverid_size(); i++)
+      {
+        std::string slaveAddr = slaveServers.hostname(i) + ":" + slaveServers.port(i);
+        std::unique_ptr<csce438::SNSService::Stub> slave_stub_;
+        slave_stub_ = SNSService::NewStub(grpc::CreateChannel(slaveAddr, grpc::InsecureChannelCredentials()));
+
+        slave_stub_->Follow(&context, request, reply);
+      }
+    }
+
     std::string u1 = request->username();
     std::string u2 = request->arguments(0);
 
@@ -220,6 +238,23 @@ class SNSServiceImpl final : public SNSService::Service
 
   Status Login(ServerContext *context, const Request *request, Reply *reply) override
   {
+    if (isMaster){
+      grpc::ClientContext context;
+      ServerList slaveServers;
+      ID id;
+      id.set_id(clusterID);
+      coordinator_stub_->GetSlaveServers(context, request, list_reply);
+
+      for(int i = 0; i < slaveServers.serverid_size(); i++)
+      {
+        std::string slaveAddr = slaveServers.hostname(i) + ":" + slaveServers.port(i);
+        std::unique_ptr<csce438::SNSService::Stub> slave_stub_;
+        slave_stub_ = SNSService::NewStub(grpc::CreateChannel(slaveAddr, grpc::InsecureChannelCredentials()));
+
+        slave_stub_->Login(&context, request, reply);
+      }
+    }
+
     Client *c = getClient(request->username());
     log(INFO, "Login request from " + request->username());
 
@@ -232,7 +267,7 @@ class SNSServiceImpl final : public SNSService::Service
       else
       {
         db_mutex.lock();
-        c->connected = true;
+        // c->connected = true; // need to be able to reconnect
         db_mutex.unlock();
         reply->set_msg("login succeeded");
       }
@@ -243,7 +278,7 @@ class SNSServiceImpl final : public SNSService::Service
       log(INFO, "Creating new client " + request->username());
       Client *new_client = new Client();
       new_client->username = request->username();
-      new_client->connected = true;
+      // new_client->connected = true; // need to be able to reconnect
 
       // Actual data modification
       db_mutex.lock();
@@ -257,6 +292,23 @@ class SNSServiceImpl final : public SNSService::Service
 
   Status Timeline(ServerContext *context, ServerReaderWriter<Message, Message> *stream) override
   {
+    if (isMaster){
+      grpc::ClientContext context;
+      ServerList slaveServers;
+      ID id;
+      id.set_id(clusterID);
+      coordinator_stub_->GetSlaveServers(context, request, list_reply);
+
+      for(int i = 0; i < slaveServers.serverid_size(); i++)
+      {
+        std::string slaveAddr = slaveServers.hostname(i) + ":" + slaveServers.port(i);
+        std::unique_ptr<csce438::SNSService::Stub> slave_stub_;
+        slave_stub_ = SNSService::NewStub(grpc::CreateChannel(slaveAddr, grpc::InsecureChannelCredentials()));
+
+        slave_stub_->Timeline(&context, stream);
+      }
+    }
+
     Message m;
     Client *curr = nullptr;
     std::string u;
@@ -479,6 +531,10 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
   std::cout << "Server listening on " << server_address << std::endl;
   log(INFO, "Server listening on " + server_address);
 
+  // Create a stub to communicate with the coordinator
+  std::string coordinator_address = coordinatorIP + ":" + coordinatorPort;
+  coordinator_stub_ = csce438::CoordService::NewStub(grpc::CreateChannel(coordinator_address, grpc::InsecureChannelCredentials()));
+
   // Make directory for cluster
   std::string masterDir = "cluster_" + std::to_string(clusterID) + "/1";
   std::string slaveDir = "cluster_" + std::to_string(clusterID) + "/2";
@@ -494,8 +550,6 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
   std::thread heartbeat([=]()
                         {
     bool registered = false;
-    std::string coordinator_address = coordinatorIP + ":" + coordinatorPort;
-    std::unique_ptr<csce438::CoordService::Stub> stub = csce438::CoordService::NewStub(grpc::CreateChannel(coordinator_address, grpc::InsecureChannelCredentials()));
 
     csce438::ServerInfo request;
     request.set_serverid(serverId);
@@ -512,7 +566,7 @@ void RunServer(int clusterID, int serverId, std::string port_no, std::string coo
       }
 
       csce438::Confirmation reply;
-      grpc::Status status = stub->Heartbeat(&context, request, &reply);
+      grpc::Status status = coordinator_stub_->Heartbeat(&context, request, &reply);
 
       if (status.ok()) {
         log(INFO, "Server " + std::to_string(request.serverid()) + " sent Heartbeat successfully.");
