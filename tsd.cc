@@ -316,6 +316,11 @@ class SNSServiceImpl final : public SNSService::Service
         stream->Write(post);
       }
 
+      //need to set ffl to 0
+      ffl_mutex.lock();
+      followingFileLines[u] = 0;
+      ffl_mutex.unlock();
+
       Message done;
       done.set_msg("DONE");
       stream->Write(done);
@@ -323,33 +328,15 @@ class SNSServiceImpl final : public SNSService::Service
 
     // thread to monitor u_following.txt file
     // I think it is ok for this thread to be here since this function can only be called once
-    std::thread following([&]()
+    std::thread following([=]()
                           {
       log(INFO, "Starting following thread for client " + u);
-      if (context->IsCancelled())
-      {
-        std::cout << "Timeline cancelled  for client " << u << std::endl;
-        return;
-      }
-      while (alive.load() && !context->IsCancelled()) {
+      while (alive.load()) {
         // -1 indicates get all posts after followingFileLines
         log(INFO, "Getting last N posts for client " + u);
-        if (u == "3"){
-          std::cout << "3 trying to get posts" << std::endl;
-        }
         std::vector<Message> newPosts = getLastNPosts(u, -1);
-        if(u == "3"){
-          std::cout << "3 got "<< newPosts.size()  << " lines" << std::endl;
-        }
-        for (const auto &post : newPosts){
-          if(u == "3"){
-            std::cout << "3's server is sending "<< post.msg() << " from " << post.username() << std::endl;
-          }
+        for (const auto &post : newPosts)
           stream->Write(post);
-        }
-        if(u == "3"){
-          std::cout << "3 wrote posts" << std::endl;
-        }
 
         std::this_thread::sleep_for(std::chrono::seconds(1));
       } });
@@ -429,23 +416,14 @@ int getClusterID(const std::string &username)
 std::vector<Message> getLastNPosts(const std::string &u, int n)
 {
   std::vector<Message> posts;
-  if(u == "3"){
-    std::cout << "3 trying in last "<< n <<" posts" << std::endl;
-  }
   log(INFO, "Getting last N posts for user " + u);
   // Get last n posts from the user's following file
   std::string followingFile = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + u + "_following.txt";
   std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + u + "_following.txt";
   sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
-  if(u == "3"){
-    std::cout << "3 trying to opened semaphore " << semName << std::endl;
-  }
 
   sem_wait(fileSem);
   std::ifstream infile(followingFile);
-  if(u == "3"){
-    std::cout << "3 in semaphore now tryting  " << followingFile << std::endl;
-  }
 
   log(INFO, "Attempting to open following file for user " + u);
   if (!infile.is_open())
@@ -464,9 +442,6 @@ std::vector<Message> getLastNPosts(const std::string &u, int n)
   infile.close();
   sem_post(fileSem);
   sem_close(fileSem);
-  if(u == "3"){
-    std::cout << "3 got "<< lines.size()  << " lines" << std::endl;
-  }
   log(INFO, "Got client " + u + " following's posts");
 
   int start = 0;
@@ -487,10 +462,6 @@ std::vector<Message> getLastNPosts(const std::string &u, int n)
     ffl_mutex.unlock();
     log(INFO, "Background fetch (n=-1). Starting from stored index: " + std::to_string(start));
   }
-  if(u == "3"){
-    std::cout << "3 start is " << start << std::endl;
-  }
-
 
   for (int i = start; i + 2 < lines.size(); i += 4)
   {
@@ -534,16 +505,10 @@ std::vector<Message> getLastNPosts(const std::string &u, int n)
 
     posts.push_back(std::move(msg));
   }
-  if(u == "3"){
-    std::cout << "3 got " << posts.size() << " posts" << std::endl;
-  }
 
   ffl_mutex.lock();
   followingFileLines[u] = lines.size();
   ffl_mutex.unlock();
-  if(u == "3"){
-    std::cout << "3 set ffl to " << lines.size() << std::endl;
-  }
 
   return posts;
 }
