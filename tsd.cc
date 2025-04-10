@@ -448,7 +448,7 @@ std::vector<Message> getLastNPosts(const std::string &u, int n)
   if (n != -1)
   {
     // Initial fetch: Calculate start based purely on N, ignore stored value.
-    start = std::max(0, static_cast<int>(lines.size()) - (n * 4));
+    start = std::max(0, static_cast<int>(lines.size()) - (n * 3));
     log(INFO, "Initial fetch (n=" + std::to_string(n) + "). Calculated start index: " + std::to_string(start));
   }
   else
@@ -462,7 +462,7 @@ std::vector<Message> getLastNPosts(const std::string &u, int n)
     log(INFO, "Background fetch (n=-1). Starting from stored index: " + std::to_string(start));
   }
 
-  for (int i = start; i + 2 < lines.size(); i += 4)
+  for (int i = start; i + 1 < lines.size(); i += 3)
   {
     if (lines[i].substr(0, 2) != "T " ||
         lines[i + 1].substr(0, 2) != "U " ||
@@ -512,7 +512,6 @@ void appendTo(const std::string &filename, const std::string &timestamp_str, con
     outfile << "T " << timestamp_str << "\n";
     outfile << "U " << username << "\n";
     outfile << "W " << message << "\n";
-    outfile << "\n";
     outfile.close();
   }
   else

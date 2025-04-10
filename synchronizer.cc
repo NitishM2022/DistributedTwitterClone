@@ -395,6 +395,7 @@ public:
                 std::string timestamp = timeline[i].substr(2);
                 std::string username = timeline[i + 1].substr(2);
                 std::string message = timeline[i + 2].substr(2);
+                std::cout << "C " << client << " adding post to timeline JSON: " << timestamp << ", " << username << ", " << message << std::endl;
                 log(INFO, "Adding post to timeline JSON: " + timestamp + ", " + username + ", " + message);
 
                 Json::Value post;
@@ -464,7 +465,12 @@ public:
                 for (const auto &clientId : root.getMemberNames())
                 {
                     if (timelineLengths.find(clientId) == timelineLengths.end())
+                    {
+                        std::cout << "C " << clientId << " not found in timelineLengths" << std::endl;
                         timelineLengths[clientId] = 0;
+                    }
+                    std::cout << "C " << clientId << " found in timelineLengths" << std::endl;
+                    std::cout << "C " << clientId << " has " << root[clientId].size() << " posts" << std::endl;
 
                     log(INFO, "Updating timeline for client " + clientId);
                     std::vector<std::string> followers = getFollowersOfUser(std::stoi(clientId));
@@ -472,6 +478,7 @@ public:
                     // Update the following file as well
                     for (const auto &follower : followers)
                     {
+                        std::cout << "C " << clientId << " has follower " << follower << std::endl;
                         std::string followingFile = "./cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + follower + "_following.txt";
                         std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + follower + "_following.txt";
                         sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
@@ -479,6 +486,7 @@ public:
                         sem_wait(fileSem);
                         std::ofstream followingStream(followingFile, std::ios::app | std::ios::out | std::ios::in);
 
+                        
                         for (int i = timelineLengths[clientId]; i < root[clientId].size(); i++)
                         {
                             const auto &post = root[clientId][i];
