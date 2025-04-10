@@ -344,7 +344,6 @@ class SNSServiceImpl final : public SNSService::Service
         }
 
         if(writeFail){
-          std::cout << "Failed to write to stream for client " + u << std::endl;
           log(ERROR, "Failed to write to stream for client " + u);
           break;
         }
