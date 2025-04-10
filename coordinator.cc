@@ -267,7 +267,7 @@ class CoordServiceImpl final : public CoordService::Service
         v_mutex.lock();
         for (auto &server : clusters[clusterID - 1])
         {
-            if (server->type == "synchronizer" && server->isActive() && !server->isMaster)
+            if (server->type == "server" && server->isActive() && !server->isMaster)
             {
                 serverlist->add_serverid(server->serverID);
                 serverlist->add_hostname(server->hostname);
