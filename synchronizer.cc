@@ -88,9 +88,9 @@ std::vector<std::string> get_tl_or_fl(int, int, bool);
 std::vector<std::string> getFollowersOfUser(int);
 std::vector<std::string> getMyFollowers(int);
 bool file_contains_user(std::string, std::string);
-int getClusterID(const std::string &)
+int getClusterID(const std::string &);
 
-    void Heartbeat(std::string coordinatorIp, std::string coordinatorPort, ServerInfo serverInfo, int syncID);
+void Heartbeat(std::string coordinatorIp, std::string coordinatorPort, ServerInfo serverInfo, int syncID);
 
 std::unique_ptr<csce438::CoordService::Stub> coordinator_stub_;
 
@@ -240,7 +240,7 @@ public:
         {
             // get all follower servers already removes myself
 
-            std::string queueName = "synch" + server_ids[i] + "_users_queue";
+            std::string queueName = "synch" + std::to_string(server_ids[i]) + "_users_queue";
             publishMessage(queueName, message);
             log(INFO, "Published user list to " + queueName);
         }
@@ -342,7 +342,7 @@ public:
                     {
                         for (const auto &follower : root[client])
                         {
-                            cout << "Client is followed by " << follower.asString() << endl;
+                            std::cout << "Client is followed by " << follower.asString() << std::endl;
                             if (!file_contains_user(followerFile, follower.asString()))
                             {
                                 followerStream << follower.asString() << std::endl;
@@ -428,7 +428,7 @@ public:
                     // do not send intra cluster updates
                     if (client_cluster != std::stoi(followerServers.clusterid(i)))
                     {
-                        std::string queueName = "synch" + followerServers.serverid(i) + "_timeline_queue";
+                        std::string queueName = "synch" + std::to_string(followerServers.serverid(i)) + "_timeline_queue";
                         publishMessage(queueName, message);
                         log(INFO, "Published timeline update to " + queueName);
                     }
