@@ -323,7 +323,7 @@ class SNSServiceImpl final : public SNSService::Service
 
     // thread to monitor u_following.txt file
     // I think it is ok for this thread to be here since this function can only be called once
-    std::thread following([=]()
+    std::thread following([&]()
                           {
       log(INFO, "Starting following thread for client " + u);
       if (context->IsCancelled())
