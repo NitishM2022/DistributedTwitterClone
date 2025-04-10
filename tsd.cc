@@ -315,6 +315,8 @@ class SNSServiceImpl final : public SNSService::Service
       curr = getClient(u);
       log(INFO, "Timeline request from client " + u);
 
+      std::cout << "Server in cluster " << clusterID << " got client " << u << std::endl;
+
       std::vector<Message> last_posts = getLastNPosts(u, 20);
       log(INFO, "Got last N posts for client " + u);
 
@@ -404,14 +406,19 @@ class SNSServiceImpl final : public SNSService::Service
 Client *getClient(const std::string &username)
 {
   db_mutex.lock();
+  std::cout << "Server in cluster " << clusterID << " getting client " << username << std::endl;
   auto it = client_db.find(username);
+  std::cout << "Server in cluster " << clusterID << " found client " << username << std::endl;
   if (it != client_db.end())
   {
+    std::cout << "Server in cluster " << clusterID << " found2 client " << username << std::endl;
     Client *client = it->second;
     db_mutex.unlock();
+    std::cout << "Server in cluster " << clusterID << " returning client " << username << std::endl;
     return client;
   }
   db_mutex.unlock();
+  std::cout << "Server in cluster " << clusterID << " client not found " << username << std::endl;
   log(ERROR, "Client not found: " + username);
 
   return nullptr;
@@ -427,13 +434,16 @@ int getClusterID(const std::string &username)
 std::vector<Message> getLastNPosts(const std::string &u, int n)
 {
   std::vector<Message> posts;
+  std::cout << "Server in cluster " << clusterID << " getting last N posts for client " << u << std::endl;
   log(INFO, "Getting last N posts for user " + u);
   // Get last n posts from the user's following file
   std::string followingFile = "cluster_" + std::to_string(clusterID) + "/" + clusterSubdirectory + "/" + u + "_following.txt";
   std::string semName = "/" + std::to_string(clusterID) + "_" + clusterSubdirectory + "_" + u + "_following.txt";
   sem_t *fileSem = sem_open(semName.c_str(), O_CREAT, 0666, 1);
+  std::cout << "Server in cluster " << clusterID << " opening semaphore following file for user " << u << std::endl;
 
   sem_wait(fileSem);
+  std::cout << "Server in cluster " << clusterID << " opening following file for user " << u << std::endl;
   std::ifstream infile(followingFile);
 
   log(INFO, "Attempting to open following file for user " + u);
@@ -447,13 +457,16 @@ std::vector<Message> getLastNPosts(const std::string &u, int n)
   std::vector<std::string> lines;
   std::string line;
 
+  std::cout << "Server in cluster " << clusterID << " reading following file for user " << u << std::endl;
   while (std::getline(infile, line))
     lines.push_back(line);
+  std::cout << "Server in cluster " << clusterID << " finished reading following file for user " << u << std::endl;
 
   infile.close();
   sem_post(fileSem);
   sem_close(fileSem);
   log(INFO, "Got client " + u + " following's posts");
+  std::cout << "Server in cluster " << clusterID << " closing semaphore following file for user " << u << std::endl;
 
   int start = 0;
 
@@ -462,6 +475,7 @@ std::vector<Message> getLastNPosts(const std::string &u, int n)
     // Initial fetch: Calculate start based purely on N, ignore stored value.
     start = std::max(0, static_cast<int>(lines.size()) - (n * 4));
     log(INFO, "Initial fetch (n=" + std::to_string(n) + "). Calculated start index: " + std::to_string(start));
+    std::cout << "Server in cluster " << clusterID << " initial fetch (n=" << n << "). Calculated start index: " << start << std::endl;
   }
   else
   {
@@ -474,6 +488,7 @@ std::vector<Message> getLastNPosts(const std::string &u, int n)
     log(INFO, "Background fetch (n=-1). Starting from stored index: " + std::to_string(start));
   }
 
+  std::cout << "Server in cluster " << clusterID << " starting to parse following file for user " << u << std::endl;
   for (int i = start; i <= lines.size() - 4; i += 4)
   {
     if (lines[i].substr(0, 2) != "T " ||
@@ -508,11 +523,13 @@ std::vector<Message> getLastNPosts(const std::string &u, int n)
 
     posts.push_back(std::move(msg));
   }
+  std::cout << "Server in cluster " << clusterID << " finished parsing following file for user " << u << std::endl;
 
   ffl_mutex.lock();
   followingFileLines[u] = lines.size();
   ffl_mutex.unlock();
 
+  std::cout << "Server in cluster " << clusterID << " updated following file lines for user " << u << std::endl;
   return posts;
 }
 
