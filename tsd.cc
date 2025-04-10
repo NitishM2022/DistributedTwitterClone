@@ -162,20 +162,22 @@ class SNSServiceImpl final : public SNSService::Service
 
   Status Follow(ServerContext *context, const Request *request, Reply *reply) override
   {
-    if (isMaster){
+    if (isMaster)
+    {
       grpc::ClientContext serverContext;
       ID id;
       ServerList slaveServers;
       id.set_id(clusterID);
-      coordinator_stub_->GetSlaves(*serverContext, id, slaveServers);
+      grpc::Status status = coordinator_stub_->GetSlaves(&serverContext, id, &slaveServers);
 
-      for(int i = 0; i < slaveServers.serverid_size(); i++)
+      for (int i = 0; i < slaveServers.serverid_size(); i++)
       {
         std::string slaveAddr = slaveServers.hostname(i) + ":" + slaveServers.port(i);
         std::unique_ptr<csce438::SNSService::Stub> slave_stub_;
         slave_stub_ = SNSService::NewStub(grpc::CreateChannel(slaveAddr, grpc::InsecureChannelCredentials()));
 
-        slave_stub_->Follow(context, *request, reply);
+        grpc::ClientContext clientContext;
+        slave_stub_->Follow(&clientContext, *request, reply);
       }
     }
 
@@ -238,20 +240,22 @@ class SNSServiceImpl final : public SNSService::Service
 
   Status Login(ServerContext *context, const Request *request, Reply *reply) override
   {
-    if (isMaster){
+    if (isMaster)
+    {
       grpc::ClientContext serverContext;
       ID id;
       ServerList slaveServers;
       id.set_id(clusterID);
-      coordinator_stub_->GetSlaves(*serverContext, id, slaveServers);
+      grpc::Status status = coordinator_stub_->GetSlaves(&serverContext, id, &slaveServers);
 
-      for(int i = 0; i < slaveServers.serverid_size(); i++)
+      for (int i = 0; i < slaveServers.serverid_size(); i++)
       {
         std::string slaveAddr = slaveServers.hostname(i) + ":" + slaveServers.port(i);
         std::unique_ptr<csce438::SNSService::Stub> slave_stub_;
         slave_stub_ = SNSService::NewStub(grpc::CreateChannel(slaveAddr, grpc::InsecureChannelCredentials()));
 
-        slave_stub_->Login(context, *request, reply);
+        grpc::ClientContext clientContext;
+        slave_stub_->Login(&clientContext, *request, reply);
       }
     }
 
@@ -292,20 +296,22 @@ class SNSServiceImpl final : public SNSService::Service
 
   Status Timeline(ServerContext *context, ServerReaderWriter<Message, Message> *stream) override
   {
-    if (isMaster){
+    if (isMaster)
+    {
       grpc::ClientContext serverContext;
-      ServerList slaveServers;
       ID id;
+      ServerList slaveServers;
       id.set_id(clusterID);
-      coordinator_stub_->GetSlaves(*serverContext, id, slaveServers);
+      grpc::Status status = coordinator_stub_->GetSlaves(&serverContext, id, &slaveServers);
 
-      for(int i = 0; i < slaveServers.serverid_size(); i++)
+      for (int i = 0; i < slaveServers.serverid_size(); i++)
       {
         std::string slaveAddr = slaveServers.hostname(i) + ":" + slaveServers.port(i);
         std::unique_ptr<csce438::SNSService::Stub> slave_stub_;
         slave_stub_ = SNSService::NewStub(grpc::CreateChannel(slaveAddr, grpc::InsecureChannelCredentials()));
 
-        slave_stub_->Timeline(context);
+        grpc::ClientContext clientContext;
+        slave_stub_->Timeline(&clientContext);
       }
     }
 
