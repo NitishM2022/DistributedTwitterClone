@@ -216,7 +216,8 @@ class CoordServiceImpl final : public CoordService::Service
         {
             for (auto &server : cluster)
             {
-                if (server->type == "synchronizer" && server->isActive())
+                // Do not return self
+                if (server->type == "synchronizer" && server->isActive() && server->serverID != id->id())
                 {
                     serverlist->add_serverid(server->serverID);
                     serverlist->add_hostname(server->hostname);
@@ -225,6 +226,31 @@ class CoordServiceImpl final : public CoordService::Service
                     serverlist->add_clusterid(std::to_string(server->clusterID).c_str());
                     serverlist->add_ismaster(server->isMaster);
                 }
+            }
+        }
+
+        v_mutex.unlock();
+
+        return Status::OK;
+    }
+
+    Status GetFollowerServers(ServerContext *context, const ID *id, ServerList *serverlist) override
+    {
+        // gets the proper follower synchronizer for the client
+        int clientID = id->id();
+        int clusterID = ((clientID - 1) % 3) + 1;
+
+        v_mutex.lock();
+        for (auto &server : clusters[clusterID - 1])
+        {
+            if (server->type == "synchronizer" && server->isActive())
+            {
+                serverlist->add_serverid(server->serverID);
+                serverlist->add_hostname(server->hostname);
+                serverlist->add_port(server->port);
+                serverlist->add_type(server->type);
+                serverlist->add_clusterid(std::to_string(server->clusterID).c_str());
+                serverlist->add_ismaster(server->isMaster);
             }
         }
 

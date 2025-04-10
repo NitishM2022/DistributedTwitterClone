@@ -44,7 +44,7 @@ service SNSService {
   rpc Timeline(stream Message) returns (stream Message) {}
 }
 
-message ListReply {
+message ListReply{ 
   repeated string all_users = 1;
   repeated string followers = 2;
 }

@@ -125,6 +125,7 @@ class SNSServiceImpl final : public SNSService::Service
 
   Status List(ServerContext *context, const Request *request, ListReply *list_reply) override
   {
+
     std::string u = request->username();
     log(INFO, "List request from " + u);
 

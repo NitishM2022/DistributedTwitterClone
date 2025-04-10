@@ -21,7 +21,7 @@ service CoordService{
     /* rpc exists (Path) returns (Status) {} */
 
     rpc GetAllFollowerServers (ID) returns (ServerList) {}
-    rpc GetFollowerServer (ID) returns (ServerInfo) {}
+    rpc GetFollowerServers (ID) returns (ServerList) {} // multiple because of slaves
 
 }
 

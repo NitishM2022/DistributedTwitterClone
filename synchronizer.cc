@@ -87,9 +87,10 @@ std::vector<std::string> get_all_users_func(int);
 std::vector<std::string> get_tl_or_fl(int, int, bool);
 std::vector<std::string> getFollowersOfUser(int);
 std::vector<std::string> getMyFollowers(int);
-bool file_contains_user(std::string filename, std::string user);
+bool file_contains_user(std::string, std::string);
+int getClusterID(const std::string &)
 
-void Heartbeat(std::string coordinatorIp, std::string coordinatorPort, ServerInfo serverInfo, int syncID);
+    void Heartbeat(std::string coordinatorIp, std::string coordinatorPort, ServerInfo serverInfo, int syncID);
 
 std::unique_ptr<csce438::CoordService::Stub> coordinator_stub_;
 
@@ -235,12 +236,11 @@ public:
         Json::FastWriter writer;
         std::string message = writer.write(userList);
 
-        for (int i = 1; i <= total_number_of_registered_synchronizers; i++)
+        for (int i = 0; i < total_number_of_registered_synchronizers; i++)
         {
-            if (server_ids[i - 1] == synchID)
-                continue;
+            // get all follower servers already removes myself
 
-            std::string queueName = "synch" + std::to_string(i) + "_users_queue";
+            std::string queueName = "synch" + server_ids[i] + "_users_queue";
             publishMessage(queueName, message);
             log(INFO, "Published user list to " + queueName);
         }
@@ -272,12 +272,15 @@ public:
 
     void publishClientRelations()
     {
-        Json::Value relations;
+        Json::Value relation;
         std::vector<std::string> users = get_all_users_func(synchID);
-        bool hasRelations = false;
 
         for (const auto &client : users)
         {
+            // Don't need to check who follows clients in my cluster that would already be updated in tsd reading followers.txt
+            if (getClusterID(client) == clusterID)
+                continue;
+
             log(INFO, "Publishing client relations for client " + client);
             int clientId = std::stoi(client);
             std::vector<std::string> followers = getFollowersOfUser(clientId);
@@ -288,29 +291,28 @@ public:
                 followerList.append(follower);
             }
 
-            if (!followerList.empty())
-            {
-                relations[client] = followerList;
-                hasRelations = true;
-            }
-        }
-
-        if (!hasRelations)
-        {
-            log(INFO, "No client relations to publish");
-            return;
-        }
-
-        for (int i = 1; i <= total_number_of_registered_synchronizers; i++)
-        {
-            if (server_ids[i - 1] == synchID)
+            if (followerList.empty())
                 continue;
 
-            std::string queueName = "synch" + std::to_string(i) + "_clients_relations_queue";
+            relation[client] = followerList;
+
+            // figure out the correct queue to publish to
+            grpc::ClientContext context;
+            ServerList followerServers;
+            ID id;
+            id.set_id(clientId);
+
+            coordinator_stub_->GetFollowerServers(&context, id, &followerServers);
+
             Json::FastWriter writer;
-            std::string message = writer.write(relations);
-            publishMessage(queueName, message);
-            log(INFO, "Published client relations to " + queueName);
+            std::string message = writer.write(relation);
+            for (int i = 0; i < followerServers.serverid_size(); i++)
+            {
+                int serverId = followerServers.serverid(i);
+                std::string queueName = "synch" + std::to_string(serverId) + "_clients_relations_queue";
+                publishMessage(queueName, message);
+                log(INFO, "Published client relations to " + queueName);
+            }
         }
     }
 
@@ -340,6 +342,7 @@ public:
                     {
                         for (const auto &follower : root[client])
                         {
+                            cout << "Client is followed by " << follower.asString() << endl;
                             if (!file_contains_user(followerFile, follower.asString()))
                             {
                                 followerStream << follower.asString() << std::endl;
@@ -365,7 +368,7 @@ public:
         {
             log(INFO, "Publishing timeline for client " + client);
             int clientId = std::stoi(client);
-            int client_cluster = ((clientId - 1) % 3) + 1;
+            int client_cluster = getClusterID(client);
             // only do this for clients in your own cluster
             // client_cluster has the same clusterID as me
             if (client_cluster != clusterID)
@@ -412,18 +415,23 @@ public:
                 // YOUR CODE HERE
                 log(INFO, "Attempting to publish to follower " + follower);
                 int followerId = std::stoi(follower);
-                int followerClusterID = ((followerId - 1) % 3) + 1;
 
-                // Do not send intra cluster updates
-                if (client_cluster != followerClusterID)
+                // figure out the correct queue to publish to
+                grpc::ClientContext context;
+                ServerList followerServers;
+                ID id;
+                id.set_id(followerId);
+
+                coordinator_stub_->GetFollowerServers(&context, id, &followerServers);
+                for (int i = 0; i < followerServers.serverid_size(); i++)
                 {
-                    std::string queueName = "synch" + std::to_string(followerClusterID) + "_timeline_queue";
-                    publishMessage(queueName, message);
-                    log(INFO, "Published timeline update to " + queueName);
-
-                    queueName = "synch" + std::to_string(followerClusterID * 2) + "_timeline_queue";
-                    publishMessage(queueName, message);
-                    log(INFO, "Published timeline update to " + queueName);
+                    // do not send intra cluster updates
+                    if (client_cluster != std::stoi(followerServers.clusterid(i)))
+                    {
+                        std::string queueName = "synch" + followerServers.serverid(i) + "_timeline_queue";
+                        publishMessage(queueName, message);
+                        log(INFO, "Published timeline update to " + queueName);
+                    }
                 }
             }
         }
@@ -927,4 +935,10 @@ std::vector<std::string> getMyFollowers(int ID)
     sem_close(fileSem);
 
     return followers;
+}
+
+int getClusterID(const std::string &username)
+{
+    int id = std::stoi(username);
+    return ((id - 1) % 3) + 1;
 }
