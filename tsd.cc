@@ -328,7 +328,7 @@ class SNSServiceImpl final : public SNSService::Service
       log(INFO, "Starting following thread for client " + u);
       if (context->IsCancelled())
       {
-        cout << "Timeline cancelled  for client " << u << endl;
+        std::cout << "Timeline cancelled  for client " << u << std::endl;
         return;
       }
       while (alive.load() && !context->IsCancelled()) {
