@@ -90,7 +90,7 @@ using csce438::SynchService;
 struct Client
 {
   std::string username;
-  bool connected = true;
+  bool connected = false;
   int following_file_size = 0;
   std::unordered_set<std::string> client_followers;
   std::unordered_set<std::string> client_following;
