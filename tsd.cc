@@ -316,11 +316,6 @@ class SNSServiceImpl final : public SNSService::Service
         stream->Write(post);
       }
 
-      // need to set ffl to 0
-      ffl_mutex.lock();
-      followingFileLines[u] = 0;
-      ffl_mutex.unlock();
-
       Message done;
       done.set_msg("DONE");
       stream->Write(done);
