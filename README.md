@@ -1,109 +1,293 @@
-# 1. On a ubuntu terminal, create a rabbitmq container that can communicate with your newly created csce438_mp2_2_container
+# MP2.2 Distributed SNS
 
-Instead of using one giant container, we use two docker containers as docker containers are supposed to be lightweight. One container that consumes too much resources may be slow.
+This README is a deep-dive of the architecture that is implemented in this subtree (`mp2_2`) today.
+It describes real behavior from the code, not an idealized design.
 
-## 1.1 create a folder for your MP2.2
+## What This System Is
 
-Like what we did in 2.1, copy the folder of your MP2.1 to a new folder named `mp2_2`. Copy the 7 source code files in this `mp2-2_skeleton` folder to the created `mp2_2` folder: synchronizer.cc, coordinator.proto, Makefile, startup.sh, stop.sh, setup.sh, docker-compose.yml. Enter into the `mp2_2` folder:
+The system is a distributed Twitter-like service with:
 
-    cd mp2_2
+- one coordinator (`coordinator`) for membership, liveness, and role assignment,
+- six server replicas (`tsd`), organized as two per cluster across three clusters,
+- six synchronizers (`synchronizer`), organized as two per cluster,
+- one RabbitMQ broker for cross-cluster asynchronous replication,
+- one CLI client (`tsc`) that discovers its serving replica from the coordinator.
 
-## 1.2. create a local docker image with your mp2.1 container
-On ubuntu terminal, in `mp2_2` folder, save your `csce438_mp2_1_container` used in MP2.1 into a local docker iamge named `csce438_mp2_2_image`. This `csce438_mp2_2_image` will serves as a key starting point for MP2.2:
+Cluster assignment is hard-coded everywhere as:
 
-    docker commit -m "mp2.2 starting point" -a "Author Name" csce438_mp2_1_container csce438_mp2_2_image
+`cluster = ((user_id - 1) % 3) + 1`
 
-You can use `docker images` to check if you have a local image named `csce438_mp2_2_image`
+So usernames are expected to be numeric IDs.
 
-## 1.3 create 2 containers using the docker compose yaml file
+## High-Level Topology
 
-On ubuntu terminal, install the `docker-compose`:
+```mermaid
+flowchart TB
+  C["Coordinator"]
+  MQ["RabbitMQ"]
+  CLI["Client (tsc)"]
 
-    sudo apt-get install docker-compose -y
+  subgraph CL1["Cluster 1"]
+    S11["tsd #1 (master or slave)"]
+    S12["tsd #2 (master or slave)"]
+    Y11["sync #1 (master or slave)"]
+    Y12["sync #4 (master or slave)"]
+    D11["cluster_1/1 (master files)"]
+    D12["cluster_1/2 (slave files)"]
+  end
 
-Use `docker-compose` to create 2 containers (`rabbitmq_container` and `csce438_mp2_2_container`). The 2 containers can talk through the inter-container communication bridge `rabbitmq_net`:
+  subgraph CL2["Cluster 2"]
+    S21["tsd #1 (master or slave)"]
+    S22["tsd #2 (master or slave)"]
+    Y21["sync #2 (master or slave)"]
+    Y22["sync #5 (master or slave)"]
+    D21["cluster_2/1"]
+    D22["cluster_2/2"]
+  end
 
-    docker-compose up -d
+  subgraph CL3["Cluster 3"]
+    S31["tsd #1 (master or slave)"]
+    S32["tsd #2 (master or slave)"]
+    Y31["sync #3 (master or slave)"]
+    Y32["sync #6 (master or slave)"]
+    D31["cluster_3/1"]
+    D32["cluster_3/2"]
+  end
 
-Enable rabbitmq_stream and rabbitmq_stream_management plugins for `rabbitmq_container`:
+  CLI -->|"GetServer(user_id)"| C
+  C --> CLI
 
-    docker exec rabbitmq_container rabbitmq-plugins enable rabbitmq_stream rabbitmq_stream_management
+  S11 <--> C
+  S12 <--> C
+  Y11 <--> C
+  Y12 <--> C
+  S21 <--> C
+  S22 <--> C
+  Y21 <--> C
+  S31 <--> C
+  S32 <--> C
+  Y31 <--> C
+  Y22 <--> C
+  Y32 <--> C
 
-Enter into the `csce438_mp2_2_container`:
+  Y11 <--> MQ
+  Y12 <--> MQ
+  Y21 <--> MQ
+  Y31 <--> MQ
+  Y22 <--> MQ
+  Y32 <--> MQ
+```
 
-    docker exec -it csce438_mp2_2_container bash -c "cd /home/csce438/mp2_2 && exec /bin/bash"
+## Component Responsibilities
 
-Make the setup script executable and execute the `setup.sh`. You would be able to see the information shown in the picture below:
+### `coordinator.cc`
 
-    chmod +x setup.sh 
-    ./setup.sh 
+- Tracks nodes (`zNode`) with: ID, host/port, type, cluster, heartbeat timestamp, and `isMaster`.
+- Receives heartbeats from both `tsd` and `synchronizer`.
+- Assigns first active node of each type in each cluster as master.
+- Demotes nodes if heartbeats are stale (`> 10s`, checked every `3s`).
+- Serves discovery RPCs:
+  - `GetServer(user_id)`: returns master `tsd` for user's cluster.
+  - `GetSlaves(cluster_id)`: returns non-master `tsd` replicas in that cluster.
+  - `GetFollowerServers(user_id)`: returns synchronizers in user's cluster.
+  - `GetAllFollowerServers(sync_id)`: returns all synchronizers except caller.
 
-![configurations of csce438_mp2_2_container](../images/configurations_of_csce438_mp2_2_container.png)
+### `tsd.cc` (server replica)
 
+- Implements `SNSService` (`Login`, `List`, `Follow`, `UnFollow`, `Timeline`).
+- Maintains in-memory `client_db` and continuously syncs it with file-backed state.
+- Sends heartbeat every 5s; heartbeat reply controls:
+  - `isMaster`,
+  - active storage root (`cluster_<id>/1` for master, `cluster_<id>/2` for slave).
+- If master, forwards mutating RPCs (`Login`, `Follow`) to local slave replicas via `GetSlaves`.
+- For timeline streaming:
+  - initial fetch from `<user>_following.txt`,
+  - background polling for new entries,
+  - appends outgoing posts to local timeline and same-cluster followers' following files.
 
-# 2. Viewing the activity in the RabbitMQ queues during development: 
+### `synchronizer.cc`
 
-You can visit the RabbitMQ Management Plugin UI at http://localhost:15672/ on your ubuntu VM and login with the credentials: 
+- Maintains heartbeat-driven master/slave role (also 5s cadence).
+- Owns three RabbitMQ queues per synchronizer ID:
+  - `synch<ID>_users_queue`
+  - `synch<ID>_clients_relations_queue`
+  - `synch<ID>_timeline_queue`
+- Runs:
+  - a publish loop (`run_synchronizer`) that executes every 5s,
+  - one consumer thread that routes by queue name substring (`users`, `relations`, `timeline`).
+- Only the synchronizer currently marked master publishes replication updates.
 
-    Username: guest
-    Password: guest
+### `tsc.cc` (client)
 
-The management UI is very useful and is implemented as a single page application which relies on the HTTP API. Some of the features include: Declare, list and delete exchanges, queues, bindings, users, virtual hosts and user permissions.
+- Contacts coordinator first (`GetServer`) using user ID.
+- Connects to returned `tsd` endpoint and runs command loop:
+  - `FOLLOW`, `UNFOLLOW`, `LIST`, `TIMELINE`.
+- `TIMELINE` opens a bidirectional stream and enters continuous read/write mode.
 
-# 3. try compiling and using provided synchronizer:
+## Control Plane Deep Dive
 
-In the `mp2_2` folder of `csce438_mp2_2_container`, compile the code (provided MP2.2 synchronizer + your MP2.1) using the provided mp2.2 makefile:
+### 1. Registration and heartbeats
 
-    make -j4
+- Servers register with `type="server"` and include cluster in metadata on first heartbeat.
+- Synchronizers register with `type="synchronizer"` and explicit `clusterID`.
+- Coordinator stores each node under one of three cluster vectors.
+- A node is considered active if:
+  - `missed_heartbeat == false`, or
+  - it missed but elapsed time since last heartbeat is still < 10s.
 
-To clear the directory (and remove .txt files):
-   
-    make clean
+### 2. Role assignment
 
-Use `stop.sh` to kill all processes:
+On heartbeat:
 
-    ./stop.sh
+- existing node: timestamp refresh + missed flag reset,
+- if no current master of that type exists in cluster, this node is promoted,
+- new node becomes master only if no master exists yet.
 
-Use `startup.sh` to launch the coordinator, tsd, and synchronizers:
+### 3. Failure handling
 
-    ./startup.sh
+- `checkHeartbeat()` runs every 3s.
+- If `now - last_heartbeat > 10s`, coordinator marks node missed and clears `isMaster`.
+- Next valid heartbeat from any replica can trigger promotion and restore service.
 
-After `startup.sh`, on the RabbitMQ Management Plugin UI at http://localhost:15672/, you should be able to see the similar pic shown below, i.e., 3 x 6 = 18 queues. Now, you can check out `TestCasesMP2.2.xlsx` for test cases and proceed your coding. 
+## Data Plane Deep Dive
 
-![rabbitmq web ui](../images/rabbitmq_web_visualization.png)
+### 1. Persistent state model
 
-# 4. during development/test, you might find the commands below useful
+All data is file-backed under `cluster_<cluster_id>/<subdir>/`, where subdir is:
 
-To avoid the inteferences of residual messages from the message queues, in the `rabbitmq_container`:
+- `1`: node currently master,
+- `2`: node currently slave.
 
-    rabbitmqctl stop_app
-    rabbitmqctl reset 
-    rabbitmqctl start_app
+Per-user files:
 
-To avoid the inteferences from residual files, in `csce438_mp2_2_container`:
+- `all_users.txt`
+- `<user>_follow_list.txt`
+- `<user>_followers.txt`
+- `<user>_following.txt`
+- `<user>_timeline.txt`
 
-    rm -rf /dev/shm/*
-    rm -rf ./cluster_*
+Record format for posts uses labeled lines:
 
-# 5. Trouble shooting and clarifications
+- `T <timestamp>`
+- `U <username>`
+- `W <message>`
 
-## 5.1 Buggy rabbitMQ skeleton code in synchronizer.cc
+Named semaphores guard file access, using patterns like:
 
-Thanks to our classmate Ivan Zaplatar: 
+- `/<cluster>_<subdir>_all_users.txt`
+- `/<cluster>_<subdir>_<user>_followers.txt`
 
-> * Firstly, we shouldn't consume from anyone elses queue except ours as that would prevent another synchronizer from reading that message. 
-> * Secondly, amqp_consume_message() takes an envelope argument which is a amqp_envelope_t and has information on which queue the message was consumed from which wasn't being used in the starter code. So calling amqp_consume_message() could give us three different kinds of messages, 2 of which wouldn't be the message we wanted. That's why I saw wrong messages because we never used the amqp_envelope_t to correctly route our data. I now instead have a single consumeMessages() function that consumes a message then routes it accordingly after inspecting the envelope.
+### 2. Intra-cluster replication (`tsd` -> `tsd`)
 
-## 5.2 The original slave Syncrhonizer F_S2 becomes a master Synchronizer on cluster 2
+When a master server receives `Login` or `Follow`:
 
-> In the manual it states: "Follower Synchronization processes on the Slave machines do not send updates to other Follower Synchronization processes." so why would the slave be able to advertise the existence of user 5 in test case 3 of MP2.2?
+1. call coordinator `GetSlaves(cluster_id)`,
+2. forward same RPC to each returned slave endpoint,
+3. execute local state mutation.
 
-The manual is correct. After the original M2 is killed, the original slave S2 becomes the new Master on cluster 2. Accordingly, the original master Synchronizer F_M2 becomes a slave Synchronizer (and being orphaned) and the original slave synchronizer F_S2 is not a slave synchronizer anymore. Instead, original slave synchronizer F_S2 becomes the master synchronizer for cluster2.
+This keeps server replicas in a cluster approximately synchronized.
 
-In this way, after you killed the original master server on cluster2, u5 would interact with the new master server (i.e., original slave server) on cluster2. The original slave machine becomes a new master machine. The original synchronizer F_S2 for the original slave machine on cluster2 will be responsible to send u5’s information to other clusters.
+### 3. Cross-cluster replication (`synchronizer` + RabbitMQ)
 
-## 5.3 Random RabbitMQ Disconnection
+Every 5s, a master synchronizer publishes:
 
-> In the buggy skeleton code, a synchronizer process is using a for loop to consume all message queues. This may cause the random RabbitMQ disconnection problem shown below. To address this, as we indicated in the section 5.1 above, the synchronize should push to other queues and only consume its own queue.
+- user catalog (`publishUserList`),
+- cross-cluster follower relationships (`publishClientRelations`),
+- timeline deltas (`publishTimelines`).
 
-![random RabbitMQ disconnection](../images/random_rabbitmq_disconnection_error.png)
+Consumers update local files:
+
+- `consumeUserLists` -> `all_users.txt`,
+- `consumeClientRelations` -> `<user>_followers.txt`,
+- `consumeTimelines` -> followers' `<user>_following.txt`.
+
+## End-to-End Timeline Flow (Cross-Cluster)
+
+Example: user `5` (cluster 2) posts, user `1` (cluster 1) follows `5`.
+
+```mermaid
+sequenceDiagram
+  participant U5 as "Client 5"
+  participant S2 as "Cluster 2 tsd master"
+  participant Y2 as "Cluster 2 sync master"
+  participant MQ as "RabbitMQ"
+  participant Y1 as "Cluster 1 sync"
+  participant S1 as "Cluster 1 tsd master"
+  participant U1 as "Client 1"
+
+  U5->>S2: Timeline stream post
+  S2->>S2: append to 5_timeline + local followers
+  Y2->>Y2: read timeline/follower files
+  Y2->>MQ: publish timeline JSON
+  MQ-->>Y1: deliver to synch<ID>_timeline_queue
+  Y1->>Y1: append post to 1_following.txt
+  S1->>S1: poll following file
+  S1-->>U1: stream new post
+```
+
+## Runtime Process Layout
+
+`startup.sh` launches the default topology:
+
+- coordinator on `9000`,
+- servers:
+  - cluster 1: `10000`, `10003`
+  - cluster 2: `10001`, `10004`
+  - cluster 3: `10002`, `10005`
+- synchronizers:
+  - IDs `1..6` on ports `9001..9006`
+  - cluster mapping by ID modulo 3.
+
+## Build and Run
+
+From `mp2_2`:
+
+```bash
+docker compose up -d
+docker exec rabbitmq_container rabbitmq-plugins enable rabbitmq_stream rabbitmq_stream_management
+docker exec -it csce438_mp2_2_container bash
+```
+
+Inside the app container:
+
+```bash
+cd /home/csce438/mp2_2
+chmod +x setup.sh startup.sh stop.sh
+./setup.sh
+make -j4
+./startup.sh
+```
+
+Stop all launched processes:
+
+```bash
+./stop.sh
+```
+
+Run a client:
+
+```bash
+./tsc -h localhost -k 9000 -u <numeric_user_id>
+```
+
+## Known Architecture Gaps (Current Code)
+
+These are important when reasoning about behavior in demos/tests:
+
+1. `UnFollow` is currently a stub in `tsd` and does not mutate state.
+2. Cluster count and user ID model are hard-coded (3 clusters, numeric usernames only).
+3. Coordinator state is in-memory only; coordinator restart loses membership/role history.
+4. Synchronizer target vectors (`server_ids`, etc.) are appended each cycle without clear; this can duplicate publish targets over time.
+5. Timeline record assumptions are inconsistent:
+   - `tsd::appendTo` writes 3-line records,
+   - `synchronizer::consumeTimelines` writes records with an extra blank line,
+   - `tsd::getLastNPosts` iterates with 4-line stride.
+6. RabbitMQ flow is at-least-once style with no durable idempotency keying; duplicate delivery can still produce repeated writes depending on consumer path.
+
+## File Map
+
+- `coordinator.cc`: control plane membership, leader assignment, discovery RPCs.
+- `tsd.cc`: SNS server logic, local replication, streaming timeline delivery.
+- `synchronizer.cc`: asynchronous cross-cluster replication via RabbitMQ.
+- `coordinator.proto`: coordinator and synchronizer service contracts.
+- `sns.proto`: client-server SNS API.
