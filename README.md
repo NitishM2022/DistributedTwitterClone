@@ -85,11 +85,15 @@ flowchart TB
   end
 
   Client -->|rpc GetServer()| Coord
-  Client <-->|rpc Timeline/Follow| S1M
+  Client -->|rpc Timeline/Follow| S1M
+  S1M -->|rpc stream| Client
 
-  Coord <-.->|Heartbeat| C1
-  Coord <-.->|Heartbeat| C2
-  Coord <-.->|Heartbeat| C3
+  Coord -.->|Heartbeat| C1
+  C1 -.->|Heartbeat| Coord
+  Coord -.->|Heartbeat| C2
+  C2 -.->|Heartbeat| Coord
+  Coord -.->|Heartbeat| C3
+  C3 -.->|Heartbeat| Coord
 
   Y1M --->|Publish| Bus
   Y2M --->|Publish| Bus
@@ -244,13 +248,11 @@ stateDiagram-v2
     }
 
     state "Timeline Threads" as Timeline {
-        state "Write Thread" as Write {
-            Note right of Write: Monitors `u_following.txt` for new posts.<br/>Streams to client. Stops thread on `write()` fail.
-        }
-        state "Read Thread" as Read {
-            Note right of Read: Appends incoming posts to `u_timeline.txt`.<br/>Appends to `u_following.txt` of intra-cluster followers.
-        }
+        state "Write Thread" as Write
+        state "Read Thread" as Read
     }
+    Note right of Write: Monitors `u_following.txt` for new posts.<br/>Streams to client. Stops thread on `write()` fail.
+    Note right of Read: Appends incoming posts to `u_timeline.txt`.<br/>Appends to `u_following.txt` of intra-cluster followers.
 ```
 
 ## 8) Run layout used by startup script
