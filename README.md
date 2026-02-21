@@ -1,293 +1,264 @@
-# MP2.2 Distributed SNS
+# Distributed Twitter Clone
 
-This README is a deep-dive of the architecture that is implemented in this subtree (`mp2_2`) today.
-It describes real behavior from the code, not an idealized design.
+This document describes the comprehensive architecture and system design of the distributed, fault-tolerant Twitter clone. The system leverages RPC for client-server communication, a central coordinator for cluster management, and RabbitMQ message queues for cross-cluster synchronization.
 
-## What This System Is
+## 1) What runs in the system
 
-The system is a distributed Twitter-like service with:
+- **1 Coordinator process** (`coordinator`)
+- **6 Server replicas** (`tsd`), exactly 2 per cluster.
+- **6 Synchronizer replicas** (`synchronizer`), exactly 2 per cluster.
+- **1 RabbitMQ broker** (message bus)
+- **Clients** (`tsc`) that connect to the coordinator to locate their respective cluster server.
 
-- one coordinator (`coordinator`) for membership, liveness, and role assignment,
-- six server replicas (`tsd`), organized as two per cluster across three clusters,
-- six synchronizers (`synchronizer`), organized as two per cluster,
-- one RabbitMQ broker for cross-cluster asynchronous replication,
-- one CLI client (`tsc`) that discovers its serving replica from the coordinator.
-
-Cluster assignment is hard-coded everywhere as:
-
+User-to-cluster mapping is fixed via hashing:
 `cluster = ((user_id - 1) % 3) + 1`
 
-So usernames are expected to be numeric IDs.
+## 2) Build and Run
 
-## High-Level Topology
-
-```mermaid
-flowchart TB
-  C["Coordinator"]
-  MQ["RabbitMQ"]
-  CLI["Client (tsc)"]
-
-  subgraph CL1["Cluster 1"]
-    S11["tsd #1 (master or slave)"]
-    S12["tsd #2 (master or slave)"]
-    Y11["sync #1 (master or slave)"]
-    Y12["sync #4 (master or slave)"]
-    D11["cluster_1/1 (master files)"]
-    D12["cluster_1/2 (slave files)"]
-  end
-
-  subgraph CL2["Cluster 2"]
-    S21["tsd #1 (master or slave)"]
-    S22["tsd #2 (master or slave)"]
-    Y21["sync #2 (master or slave)"]
-    Y22["sync #5 (master or slave)"]
-    D21["cluster_2/1"]
-    D22["cluster_2/2"]
-  end
-
-  subgraph CL3["Cluster 3"]
-    S31["tsd #1 (master or slave)"]
-    S32["tsd #2 (master or slave)"]
-    Y31["sync #3 (master or slave)"]
-    Y32["sync #6 (master or slave)"]
-    D31["cluster_3/1"]
-    D32["cluster_3/2"]
-  end
-
-  CLI -->|"GetServer(user_id)"| C
-  C --> CLI
-
-  S11 <--> C
-  S12 <--> C
-  Y11 <--> C
-  Y12 <--> C
-  S21 <--> C
-  S22 <--> C
-  Y21 <--> C
-  S31 <--> C
-  S32 <--> C
-  Y31 <--> C
-  Y22 <--> C
-  Y32 <--> C
-
-  Y11 <--> MQ
-  Y12 <--> MQ
-  Y21 <--> MQ
-  Y31 <--> MQ
-  Y22 <--> MQ
-  Y32 <--> MQ
-```
-
-## Component Responsibilities
-
-### `coordinator.cc`
-
-- Tracks nodes (`zNode`) with: ID, host/port, type, cluster, heartbeat timestamp, and `isMaster`.
-- Receives heartbeats from both `tsd` and `synchronizer`.
-- Assigns first active node of each type in each cluster as master.
-- Demotes nodes if heartbeats are stale (`> 10s`, checked every `3s`).
-- Serves discovery RPCs:
-  - `GetServer(user_id)`: returns master `tsd` for user's cluster.
-  - `GetSlaves(cluster_id)`: returns non-master `tsd` replicas in that cluster.
-  - `GetFollowerServers(user_id)`: returns synchronizers in user's cluster.
-  - `GetAllFollowerServers(sync_id)`: returns all synchronizers except caller.
-
-### `tsd.cc` (server replica)
-
-- Implements `SNSService` (`Login`, `List`, `Follow`, `UnFollow`, `Timeline`).
-- Maintains in-memory `client_db` and continuously syncs it with file-backed state.
-- Sends heartbeat every 5s; heartbeat reply controls:
-  - `isMaster`,
-  - active storage root (`cluster_<id>/1` for master, `cluster_<id>/2` for slave).
-- If master, forwards mutating RPCs (`Login`, `Follow`) to local slave replicas via `GetSlaves`.
-- For timeline streaming:
-  - initial fetch from `<user>_following.txt`,
-  - background polling for new entries,
-  - appends outgoing posts to local timeline and same-cluster followers' following files.
-
-### `synchronizer.cc`
-
-- Maintains heartbeat-driven master/slave role (also 5s cadence).
-- Owns three RabbitMQ queues per synchronizer ID:
-  - `synch<ID>_users_queue`
-  - `synch<ID>_clients_relations_queue`
-  - `synch<ID>_timeline_queue`
-- Runs:
-  - a publish loop (`run_synchronizer`) that executes every 5s,
-  - one consumer thread that routes by queue name substring (`users`, `relations`, `timeline`).
-- Only the synchronizer currently marked master publishes replication updates.
-
-### `tsc.cc` (client)
-
-- Contacts coordinator first (`GetServer`) using user ID.
-- Connects to returned `tsd` endpoint and runs command loop:
-  - `FOLLOW`, `UNFOLLOW`, `LIST`, `TIMELINE`.
-- `TIMELINE` opens a bidirectional stream and enters continuous read/write mode.
-
-## Control Plane Deep Dive
-
-### 1. Registration and heartbeats
-
-- Servers register with `type="server"` and include cluster in metadata on first heartbeat.
-- Synchronizers register with `type="synchronizer"` and explicit `clusterID`.
-- Coordinator stores each node under one of three cluster vectors.
-- A node is considered active if:
-  - `missed_heartbeat == false`, or
-  - it missed but elapsed time since last heartbeat is still < 10s.
-
-### 2. Role assignment
-
-On heartbeat:
-
-- existing node: timestamp refresh + missed flag reset,
-- if no current master of that type exists in cluster, this node is promoted,
-- new node becomes master only if no master exists yet.
-
-### 3. Failure handling
-
-- `checkHeartbeat()` runs every 3s.
-- If `now - last_heartbeat > 10s`, coordinator marks node missed and clears `isMaster`.
-- Next valid heartbeat from any replica can trigger promotion and restore service.
-
-## Data Plane Deep Dive
-
-### 1. Persistent state model
-
-All data is file-backed under `cluster_<cluster_id>/<subdir>/`, where subdir is:
-
-- `1`: node currently master,
-- `2`: node currently slave.
-
-Per-user files:
-
-- `all_users.txt`
-- `<user>_follow_list.txt`
-- `<user>_followers.txt`
-- `<user>_following.txt`
-- `<user>_timeline.txt`
-
-Record format for posts uses labeled lines:
-
-- `T <timestamp>`
-- `U <username>`
-- `W <message>`
-
-Named semaphores guard file access, using patterns like:
-
-- `/<cluster>_<subdir>_all_users.txt`
-- `/<cluster>_<subdir>_<user>_followers.txt`
-
-### 2. Intra-cluster replication (`tsd` -> `tsd`)
-
-When a master server receives `Login` or `Follow`:
-
-1. call coordinator `GetSlaves(cluster_id)`,
-2. forward same RPC to each returned slave endpoint,
-3. execute local state mutation.
-
-This keeps server replicas in a cluster approximately synchronized.
-
-### 3. Cross-cluster replication (`synchronizer` + RabbitMQ)
-
-Every 5s, a master synchronizer publishes:
-
-- user catalog (`publishUserList`),
-- cross-cluster follower relationships (`publishClientRelations`),
-- timeline deltas (`publishTimelines`).
-
-Consumers update local files:
-
-- `consumeUserLists` -> `all_users.txt`,
-- `consumeClientRelations` -> `<user>_followers.txt`,
-- `consumeTimelines` -> followers' `<user>_following.txt`.
-
-## End-to-End Timeline Flow (Cross-Cluster)
-
-Example: user `5` (cluster 2) posts, user `1` (cluster 1) follows `5`.
-
-```mermaid
-sequenceDiagram
-  participant U5 as "Client 5"
-  participant S2 as "Cluster 2 tsd master"
-  participant Y2 as "Cluster 2 sync master"
-  participant MQ as "RabbitMQ"
-  participant Y1 as "Cluster 1 sync"
-  participant S1 as "Cluster 1 tsd master"
-  participant U1 as "Client 1"
-
-  U5->>S2: Timeline stream post
-  S2->>S2: append to 5_timeline + local followers
-  Y2->>Y2: read timeline/follower files
-  Y2->>MQ: publish timeline JSON
-  MQ-->>Y1: deliver to synch<ID>_timeline_queue
-  Y1->>Y1: append post to 1_following.txt
-  S1->>S1: poll following file
-  S1-->>U1: stream new post
-```
-
-## Runtime Process Layout
-
-`startup.sh` launches the default topology:
-
-- coordinator on `9000`,
-- servers:
-  - cluster 1: `10000`, `10003`
-  - cluster 2: `10001`, `10004`
-  - cluster 3: `10002`, `10005`
-- synchronizers:
-  - IDs `1..6` on ports `9001..9006`
-  - cluster mapping by ID modulo 3.
-
-## Build and Run
-
-From `mp2_2`:
+### Build Setup
 
 ```bash
-docker compose up -d
+cd mp2_2
+# Assuming docker environment setup
+sudo apt-get install docker-compose -y
+docker-compose up -d
+
+# Enable RabbitMQ plugins
 docker exec rabbitmq_container rabbitmq-plugins enable rabbitmq_stream rabbitmq_stream_management
-docker exec -it csce438_mp2_2_container bash
-```
 
-Inside the app container:
+# Access the container
+docker exec -it csce438_mp2_2_container bash -c "cd /home/csce438/mp2_2 && exec /bin/bash"
 
-```bash
-cd /home/csce438/mp2_2
+# Initial setup
 chmod +x setup.sh startup.sh stop.sh
 ./setup.sh
+
+# Compile
 make -j4
+```
+
+To clear the directory (and remove `.txt` DB files): `make clean`
+
+### Running the System Manually
+
+If not using `./startup.sh`:
+
+- **Coordinator:** `./coordinator -p 9000` _(Add `GLOG_logtostderr=1` for logs)_
+- **Server:** `./tsd -c <clusterId> -s <serverId> -h <coordinatorIP> -k <coordinatorPort> -p <portNum>`
+- **Synchronizer:** `./synchronizer -h <coordinatorIP> -k <coordinatorPort> -p <portNum> -i <synchID>`
+
+Or run everything automatically:
+
+```bash
 ./startup.sh
 ```
 
-Stop all launched processes:
+---
 
-```bash
-./stop.sh
+## 3) Deployment map (Macro View)
+
+```mermaid
+flowchart TB
+  Client["Clients (tsc)"]
+  Coord["Coordinator<br/>(Manages Heartbeats & Leaders)"]
+  Bus["RabbitMQ Message Bus<br/>(Cross-Cluster Pub/Sub)"]
+
+  subgraph C1 ["Cluster 1"]
+    S1M["Server Master (tsd)"]
+    S1S["Server Slave (tsd)"]
+    Y1M["Sync Master"]
+    Y1S["Sync Slave"]
+  end
+
+  subgraph C2 ["Cluster 2"]
+    S2M["Server Master (tsd)"]
+    S2S["Server Slave (tsd)"]
+    Y2M["Sync Master"]
+    Y2S["Sync Slave"]
+  end
+
+  subgraph C3 ["Cluster 3"]
+    S3M["Server Master (tsd)"]
+    S3S["Server Slave (tsd)"]
+    Y3M["Sync Master"]
+    Y3S["Sync Slave"]
+  end
+
+  Client -->|rpc GetServer()| Coord
+  Client <-->|rpc Timeline/Follow| S1M
+
+  Coord <-.->|Heartbeat| C1
+  Coord <-.->|Heartbeat| C2
+  Coord <-.->|Heartbeat| C3
+
+  Y1M --->|Publish| Bus
+  Y2M --->|Publish| Bus
+  Y3M --->|Publish| Bus
+
+  Bus --->|Consume| Y1M & Y1S
+  Bus --->|Consume| Y2M & Y2S
+  Bus --->|Consume| Y3M & Y3S
 ```
 
-Run a client:
+---
 
-```bash
-./tsc -h localhost -k 9000 -u <numeric_user_id>
+## 4) Intra-Cluster Architecture (Micro View)
+
+Inside each cluster, processes are strictly divided into active **Masters** and standby **Slaves**. The Master Synchronizer is solely responsible for publishing to RabbitMQ. Both Master and Slave Synchronizers consume from RabbitMQ to keep their local file layouts synced. The Master Server forwards state-changing operations to the Slave Server.
+
+```mermaid
+flowchart LR
+  U["Client"] -->|gRPC| SM["Server Master (tsd)"]
+  SM -->|Forward Follow/Login| SF["Server Slave (tsd)"]
+
+  subgraph Storage [Persistent Storage]
+    DM["Master Store Directory<br/>(cluster_X/1)"]
+    DF["Slave Store Directory<br/>(cluster_X/2)"]
+  end
+
+  SM <--> DM
+  SF <--> DF
+
+  SYM["Sync Master"] -->|Reads Files| DM
+  SYM -->|Publishes JSON Lists| MQ["RabbitMQ Exchange"]
+
+  MQ -->|Consumes| SYCM["Sync Master Consumer Thread"]
+  MQ -->|Consumes| SYCS["Sync Slave Consumer Thread"]
+
+  SYCM -->|Writes Updates| DM
+  SYCS -->|Writes Updates| DF
 ```
 
-## Known Architecture Gaps (Current Code)
+---
 
-These are important when reasoning about behavior in demos/tests:
+## 5) Control Plane & Leader Election
 
-1. `UnFollow` is currently a stub in `tsd` and does not mutate state.
-2. Cluster count and user ID model are hard-coded (3 clusters, numeric usernames only).
-3. Coordinator state is in-memory only; coordinator restart loses membership/role history.
-4. Synchronizer target vectors (`server_ids`, etc.) are appended each cycle without clear; this can duplicate publish targets over time.
-5. Timeline record assumptions are inconsistent:
-   - `tsd::appendTo` writes 3-line records,
-   - `synchronizer::consumeTimelines` writes records with an extra blank line,
-   - `tsd::getLastNPosts` iterates with 4-line stride.
-6. RabbitMQ flow is at-least-once style with no durable idempotency keying; duplicate delivery can still produce repeated writes depending on consumer path.
+The Coordinator handles dynamic assignment of `Master` and `Slave` roles using a 5-second Heartbeat mechanism.
 
-## File Map
+### Heartbeat Sequence
 
-- `coordinator.cc`: control plane membership, leader assignment, discovery RPCs.
-- `tsd.cc`: SNS server logic, local replication, streaming timeline delivery.
-- `synchronizer.cc`: asynchronous cross-cluster replication via RabbitMQ.
-- `coordinator.proto`: coordinator and synchronizer service contracts.
-- `sns.proto`: client-server SNS API.
+```mermaid
+sequenceDiagram
+    participant S as Server/Sync Node
+    participant C as Coordinator
+    participant U as Client
+
+    loop Every 5 seconds
+        S->>C: Heartbeat(NodeID, ClusterID, Type)
+        alt Cluster has no Master
+            C-->>S: HeartbeatReply(isMaster = true)
+        else Master exists
+            C-->>S: HeartbeatReply(isMaster = false)
+        end
+    end
+
+    Note over C: Background checkHeartbeat thread (every 3s)<br/>Demotes nodes if last_heartbeat > 10s
+
+    U->>C: GetServer(user_id)
+    C->>C: Hash UserID to find Target Cluster
+    C-->>U: Return Active Server Master Endpoint
+```
+
+---
+
+## 6) Cross-Cluster Synchronization (RabbitMQ)
+
+The **Synchronizer** daemon maintains eventual consistency across clusters. Cross-cluster data is handled using three internal publish/consume RabbitMQ queues:
+
+1. **UserList**
+2. **ClientRelations (Followers)**
+3. **Timelines (Posts)**
+
+File access inside the Synchronizer is strictly protected using named semaphores (`sem_open`).
+
+### Timeline Replication Sequence
+
+When User 5 (Cluster 2) posts, and User 1 (Cluster 1) is a follower:
+
+```mermaid
+sequenceDiagram
+    participant U5 as Client 5
+    participant S2M as Cluster 2 Server Master
+    participant Y2M as Cluster 2 Sync Master
+    participant MQ as RabbitMQ
+    participant Y1C as Cluster 1 Sync Consumer
+    participant S1M as Cluster 1 Server Thread
+    participant U1 as Client 1
+
+    U5->>S2M: Write Post (Timeline Stream)
+    S2M->>S2M: Append to cluster_2/1/u_timeline.txt
+
+    loop Every 5s
+        Y2M->>Y2M: Read all clients' timelines
+        Y2M->>Y2M: Check u_followers.txt
+        Y2M->>MQ: amqp_basic_publish(Timeline JSON object)
+    end
+
+    MQ-->>Y1C: Delivery via consumeMessage()
+    Y1C->>Y1C: Hashmap checks delivered posts
+    Y1C->>Y1C: Append to cluster_1/*/u_following.txt for User 1
+
+    loop DB Thread
+        S1M->>S1M: Detect new posts in u_following.txt
+        S1M->>U1: Stream write newly detected posts
+    end
+```
+
+### Queue Breakdown
+
+#### 1. UserList Queue
+
+- **Publisher (Sync Master):** Reads `all_users.txt` in its cluster directory. Compiles a JSON list of users and publishes it.
+- **Consumer:** Reads JSON, iterates items, and appends missing users to the local `all_users.txt`.
+
+#### 2. ClientRelations Queue
+
+- **Publisher (Sync Master):** Reads `all_users.txt`. Iterates through all clients in its cluster. If a local client follows an external user, it compiles `{"User": ["Follower 1", "Follower 2"]}` and asks the Coordinator for target routing before publishing.
+- **Consumer:** Reads JSON, finds external users and local followers, appending missing entries to `u_followers.txt`.
+
+#### 3. Timelines Queue
+
+- **Publisher (Sync Master):** Extracts unsynchronized posts for every local client. Checks `u_followers.txt` to find external followers. Contacts Coordinator to find target synchronization queues, then publishes JSON containing posts.
+- **Consumer:** Maintains an in-memory hashmap tracking published post counts. Appends novel posts directly to the target follower's `u_following.txt` file.
+
+---
+
+## 7) Server Internal Architecture
+
+The `tsd` server employs isolated threads to keep gRPC handlers unblocked:
+
+```mermaid
+stateDiagram-v2
+    direction TB
+    state "gRPC Handlers" as RPC {
+        Login --> Follow
+        Follow --> ForwardToSlave
+    }
+
+    state "DB Thread (Bidirectional Sync)" as DB {
+        state "Read all_users.txt, u_follow_list.txt" as ReadFiles
+        state "Update In-Memory `client_db`" as UpdateMem
+        state "Persist `client_db` to Files" as WriteFiles
+        ReadFiles --> UpdateMem
+        UpdateMem --> WriteFiles
+    }
+
+    state "Timeline Threads" as Timeline {
+        state "Write Thread" as Write {
+            Note right of Write: Monitors `u_following.txt` for new posts.<br/>Streams to client. Stops thread on `write()` fail.
+        }
+        state "Read Thread" as Read {
+            Note right of Read: Appends incoming posts to `u_timeline.txt`.<br/>Appends to `u_following.txt` of intra-cluster followers.
+        }
+    }
+```
+
+## 8) Run layout used by startup script
+
+- **Coordinator:** `9000`
+- **Servers:**
+  - Cluster 1: `10000`, `10003`
+  - Cluster 2: `10001`, `10004`
+  - Cluster 3: `10002`, `10005`
+- **Synchronizers:**
+  - IDs `1..6`, ports `9001..9006`
