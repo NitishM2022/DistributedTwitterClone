@@ -84,24 +84,27 @@ flowchart TB
     Y3S["Sync Slave"]
   end
 
-  Client -->|rpc GetServer()| Coord
-  Client -->|rpc Timeline/Follow| S1M
+  Client -->|rpc GetServer| Coord
+  Client -->|rpc Timeline Follow| S1M
   S1M -->|rpc stream| Client
 
-  Coord -.->|Heartbeat| C1
-  C1 -.->|Heartbeat| Coord
-  Coord -.->|Heartbeat| C2
-  C2 -.->|Heartbeat| Coord
-  Coord -.->|Heartbeat| C3
-  C3 -.->|Heartbeat| Coord
+  Coord -.->|Heartbeat| S1M
+  S1M -.->|Heartbeat| Coord
+  Coord -.->|Heartbeat| S2M
+  S2M -.->|Heartbeat| Coord
+  Coord -.->|Heartbeat| S3M
+  S3M -.->|Heartbeat| Coord
 
   Y1M --->|Publish| Bus
   Y2M --->|Publish| Bus
   Y3M --->|Publish| Bus
 
-  Bus --->|Consume| Y1M & Y1S
-  Bus --->|Consume| Y2M & Y2S
-  Bus --->|Consume| Y3M & Y3S
+  Bus --->|Consume| Y1M
+  Bus --->|Consume| Y1S
+  Bus --->|Consume| Y2M
+  Bus --->|Consume| Y2S
+  Bus --->|Consume| Y3M
+  Bus --->|Consume| Y3S
 ```
 
 ---
